@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>La Mia Collezione Giochi da Tavolo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase SDKs (Modular v10) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, getDocs, addDoc, doc, updateDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Configurazione Firebase integrata
+        const firebaseConfig = {
+            apiKey: "AIzaSyDseQnvholTAZknGrLqMbbjALhz4casxJg",
+            authDomain: "test-6a1c6.firebaseapp.com",
+            databaseURL: "https://test-6a1c6.firebaseio.com",
+            projectId: "test-6a1c6",
+            storageBucket: "test-6a1c6.firebasestorage.app",
+            messagingSenderId: "70976640675",
+            appId: "1:70976640675:web:1eb7b1d2ad0ddc147e9116"
+        };
+
+        // Inizializzazione Firebase & Firestore
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Esponiamo i metodi globalmente per l'interfaccia HTML
+        window.db = db;
+        window.firestoreMethods = { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, onSnapshot };
+    </script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 50: '#f0fdf4', 100: '#dcfce7', 500: '#22c55e', 600: '#16a34a', 700: '#15803d', 900: '#14532d' }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col font-sans antialiased pb-20 md:pb-0">
+
+    <!-- Header / Navbar -->
+    <header class="bg-slate-800 border-b border-slate-700 sticky top-0 z-30 shadow-md">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="bg-brand-600 text-white p-2 rounded-lg font-bold text-xl">🎲</div>
+                <div>
+                    <h1 class="text-xl font-bold bg-gradient-to-r from-brand-500 to-emerald-400 bg-clip-text text-transparent">BoardGame Shelf</h1>
+                    <p class="text-xs text-slate-400 hidden sm:block">Filtra, scegli e traccia le tue serate di gioco (Firebase Live Sync)</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-2">
+                <button onclick="openModal('presetModal')" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
+                    <span>Preferiti</span>
+                </button>
+                <button onclick="openAddGameModal()" class="bg-brand-600 hover:bg-brand-500 text-white px-3.5 py-1.5 rounded-lg text-sm font-semibold transition shadow flex items-center gap-1.5">
+                    <span>+ Nuovo</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- App Main Container -->
+    <div class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full flex flex-col md:flex-row gap-6">
+
+        <!-- Sidebar Filtri (Desktop) -->
+        <aside class="w-full md:w-72 bg-slate-800 p-5 rounded-xl border border-slate-700 shrink-0 hidden md:block h-fit sticky top-20 shadow-lg">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-base font-bold text-white uppercase tracking-wider">Filtri Serata</h2>
+                <button onclick="resetFilters()" class="text-xs text-brand-500 hover:underline">Reset</button>
+            </div>
+
+            <!-- Preset Rapidi -->
+            <div class="mb-5 pb-4 border-b border-slate-700">
+                <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Preset Salvati</label>
+                <select id="presetSelectDesktop" onchange="applySelectedPreset(this.value)" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                    <option value="">-- Seleziona un Preset --</option>
+                </select>
+            </div>
+
+            <div class="space-y-4">
+                <!-- Ricerca -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Cerca Titolo</label>
+                    <input type="text" id="filterSearch" oninput="applyFilters()" placeholder="Es: Catan, Wingspan..." class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                </div>
+
+                <!-- Proprietà -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Proprietà</label>
+                    <select id="filterOwnership" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                        <option value="all">Tutti i giochi</option>
+                        <option value="owned">Solo miei</option>
+                        <option value="friend">Di un amico</option>
+                    </select>
+                </div>
+
+                <!-- Giocatori -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Giocatori al Tavolo</label>
+                    <input type="number" id="filterPlayers" oninput="applyFilters()" min="1" max="20" placeholder="Es: 4" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                </div>
+
+                <!-- Durata Max -->
+                <div>
+                    <div class="flex justify-between text-xs font-medium text-slate-300 mb-1">
+                        <span>Durata Max</span>
+                        <span id="filterTimeVal" class="text-brand-500 font-bold">Tutti</span>
+                    </div>
+                    <input type="range" id="filterTime" oninput="updateTimeVal(); applyFilters();" min="15" max="240" step="15" value="240" class="w-full accent-brand-500 cursor-pointer">
+                </div>
+
+                <!-- Complessità / Peso -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Complessità BGG</label>
+                    <select id="filterWeight" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                        <option value="all">Tutti i livelli</option>
+                        <option value="light">Leggero (1.0 - 2.0)</option>
+                        <option value="medium">Medio (2.1 - 3.2)</option>
+                        <option value="heavy">Cinghiale (3.3 - 5.0)</option>
+                    </select>
+                </div>
+
+                <!-- Tema (boardgamecategory) -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Tema (BGG Category)</label>
+                    <select id="filterTheme" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                        <option value="all">Tutti i Temi</option>
+                    </select>
+                </div>
+
+                <!-- Serie / Franchise (boardgamefamily) -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Serie / Franchise (BGG Family)</label>
+                    <select id="filterSeries" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                        <option value="all">Tutte le Serie</option>
+                    </select>
+                </div>
+
+                <!-- Ordinamento -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Ordina Per</label>
+                    <select id="filterSort" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                        <option value="personalRating">Media Voto Mio Gruppo</option>
+                        <option value="bggRating">Voto Ufficiale BGG</option>
+                        <option value="plays">Partite Giocate</option>
+                        <option value="weightAsc">Più Leggero</option>
+                        <option value="weightDesc">Più Complesso</option>
+                        <option value="timeAsc">Più Breve</option>
+                        <option value="title">Titolo (A-Z)</option>
+                    </select>
+                </div>
+
+                <button onclick="saveCurrentFiltersAsPreset()" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs py-2 rounded-lg font-semibold transition border border-slate-600">
+                    Salva Filtri Correnti
+                </button>
+            </div>
+        </aside>
+
+        <!-- Sezione Principale Risultati -->
+        <main class="flex-1 flex flex-col gap-4">
+            
+            <!-- Barra di controllo e Pulsante Random -->
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-wrap items-center justify-between gap-4 shadow">
+                <div>
+                    <span class="text-sm text-slate-400">Giochi Trovati:</span>
+                    <span id="gameCount" class="text-lg font-bold text-brand-500 ml-1">0</span>
+                </div>
+
+                <button onclick="pickRandomGame()" class="bg-gradient-to-r from-emerald-500 to-brand-600 hover:from-emerald-600 hover:to-brand-700 text-white font-bold px-4 py-2 rounded-lg shadow-lg transition flex items-center gap-2">
+                    <span>Pesca un Gioco a Caso</span>
+                </button>
+            </div>
+
+            <!-- Griglia Giochi -->
+            <div id="gamesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- I giochi verranno renderizzati da Firestore -->
+            </div>
+        </main>
+    </div>
+
+    <!-- Mobile Bottom Navigation Bar -->
+    <div class="md:hidden fixed bottom-0 left-0 right-0 bg-slate-800 border-t border-slate-700 p-2 flex justify-around items-center z-40">
+        <button onclick="openModal('mobileFilterModal')" class="flex flex-col items-center text-slate-400 hover:text-brand-500 text-xs py-1">
+            <span>Filtri</span>
+        </button>
+        <button onclick="openModal('presetModal')" class="flex flex-col items-center text-slate-400 hover:text-brand-500 text-xs py-1">
+            <span>Preferiti</span>
+        </button>
+        <button onclick="pickRandomGame()" class="bg-brand-600 text-white p-3 rounded-full -mt-6 shadow-xl border-4 border-slate-900 font-bold">
+            🎲
+        </button>
+        <button onclick="openAddGameModal()" class="flex flex-col items-center text-slate-400 hover:text-brand-500 text-xs py-1">
+            <span>+ Aggiungi</span>
+        </button>
+    </div>
+
+    <!-- Modale Importazione / Editing Gioco -->
+    <div id="addGameModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="modalTitle" class="text-lg font-bold text-white">Aggiungi Nuovo Gioco</h3>
+                <button onclick="closeModal('addGameModal')" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
+            </div>
+
+            <form id="gameForm" onsubmit="saveGame(event)" class="space-y-4">
+                <input type="hidden" id="editGameId">
+
+                <!-- BGG Import Bar -->
+                <div class="bg-slate-900 p-3 rounded-xl border border-slate-700 space-y-2">
+                    <label class="block text-xs font-semibold text-brand-500 uppercase tracking-wider">Importazione Automatica da BoardGameGeek</label>
+                    <div class="flex gap-2">
+                        <input type="number" id="bggIdInput" placeholder="BGG Game ID (es: 13, 167791)" class="flex-1 bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg p-2 focus:border-brand-500 focus:outline-none">
+                        <button type="button" onclick="fetchBGGData()" class="bg-brand-600 hover:bg-brand-500 text-white px-3 py-2 rounded-lg text-xs font-bold transition shrink-0 flex items-center gap-1">
+                            <span>Importa</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Titolo Gioco *</label>
+                    <input type="text" id="gameTitle" required class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                </div>
+
+                <!-- Proprietà -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Proprietario *</label>
+                        <select id="gameOwnership" onchange="toggleOwnerNameInput()" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                            <option value="owned">Mio (Posseduto)</option>
+                            <option value="friend">Di un Amico</option>
+                        </select>
+                    </div>
+                    <div id="ownerNameContainer" class="hidden">
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Nome Amico</label>
+                        <input type="text" id="gameOwnerName" placeholder="Es: Marco, Luca" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Giocatori Min *</label>
+                        <input type="number" id="gameMinPlayers" required min="1" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Giocatori Max *</label>
+                        <input type="number" id="gameMaxPlayers" required min="1" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Durata (Minuti)</label>
+                        <input type="number" id="gamePlayTime" step="5" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Complessità (1-5)</label>
+                        <input type="number" id="gameWeight" step="0.1" min="1" max="5" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Rating BGG</label>
+                        <input type="number" id="gameBggRating" step="0.1" min="1" max="10" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Temi (Category)</label>
+                        <input type="text" id="gameThemes" placeholder="Sci-Fi, Economico..." class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Serie (Family)</label>
+                        <input type="text" id="gameSeries" placeholder="Star Wars, Marvel..." class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">URL Immagine Copertina</label>
+                    <input type="url" id="gameCoverUrl" placeholder="https://..." class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Note Personali</label>
+                    <textarea id="gameNotes" rows="2" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none"></textarea>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="closeModal('addGameModal')" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-4 py-2 rounded-lg text-sm font-semibold">Annulla</button>
+                    <button type="submit" class="bg-brand-600 hover:bg-brand-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow">Salva in Firestore</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modale Registrazione Rapida Partita -->
+    <div id="logPlayModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-white">Registra Nuova Partita</h3>
+                <button onclick="closeModal('logPlayModal')" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
+            </div>
+
+            <form id="logPlayForm" onsubmit="savePlayLog(event)" class="space-y-4">
+                <input type="hidden" id="logGameId">
+
+                <p id="logGameTitle" class="text-sm font-bold text-brand-500"></p>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Quanti eravate al tavolo? *</label>
+                    <input type="number" id="logPlayerCount" required min="1" max="30" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2.5 text-sm focus:border-brand-500 focus:outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Quanto è stata piacevole la partita? (1 - 10) *</label>
+                    <input type="number" id="logRating" required min="1" max="10" step="0.5" placeholder="Es: 8" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2.5 text-sm focus:border-brand-500 focus:outline-none">
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="closeModal('logPlayModal')" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-4 py-2 rounded-lg text-sm font-semibold">Annulla</button>
+                    <button type="submit" class="bg-brand-600 hover:bg-brand-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow">Salva Partita</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modale Gestione Preset Filtri -->
+    <div id="presetModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-white">Preset Filtri Salvati</h3>
+                <button onclick="closeModal('presetModal')" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
+            </div>
+
+            <div id="presetListContainer" class="space-y-2 max-h-60 overflow-y-auto mb-4">
+                <!-- Preset renderizzati da JS -->
+            </div>
+
+            <div class="pt-2 border-t border-slate-700">
+                <button onclick="saveCurrentFiltersAsPreset()" class="w-full bg-brand-600 hover:bg-brand-500 text-white py-2 rounded-lg text-sm font-bold shadow">
+                    Salva Filtri Attuali come Nuovo Preset
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale Filtri Mobile -->
+    <div id="mobileFilterModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden md:hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-white">Filtra Giochi</h3>
+                <button onclick="closeModal('mobileFilterModal')" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Cerca Titolo</label>
+                    <input type="text" id="mobileFilterSearch" oninput="syncMobileFilters(); applyFilters();" placeholder="Cerca..." class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Proprietà</label>
+                    <select id="mobileFilterOwnership" onchange="syncMobileFilters(); applyFilters();" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm">
+                        <option value="all">Tutti i giochi</option>
+                        <option value="owned">Solo miei</option>
+                        <option value="friend">Di un amico</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Giocatori al Tavolo</label>
+                    <input type="number" id="mobileFilterPlayers" oninput="syncMobileFilters(); applyFilters();" placeholder="Es: 4" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Complessità</label>
+                    <select id="mobileFilterWeight" onchange="syncMobileFilters(); applyFilters();" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm">
+                        <option value="all">Tutti i livelli</option>
+                        <option value="light">Leggero (1.0 - 2.0)</option>
+                        <option value="medium">Medio (2.1 - 3.2)</option>
+                        <option value="heavy">Cinghiale (3.3 - 5.0)</option>
+                    </select>
+                </div>
+
+                <div class="pt-2">
+                    <button onclick="closeModal('mobileFilterModal')" class="w-full bg-brand-600 hover:bg-brand-500 text-white py-2 rounded-lg text-sm font-bold">Applica Filtri</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale Gioco Estratto a Caso -->
+    <div id="randomPickModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-800 border border-brand-500 rounded-2xl w-full max-w-sm p-6 text-center shadow-2xl relative">
+            <h3 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Stasera si gioca a...</h3>
+            <div id="randomPickContent" class="space-y-3">
+                <!-- Contenuto dinamico -->
+            </div>
+            <button onclick="closeModal('randomPickModal')" class="mt-5 w-full bg-slate-700 hover:bg-slate-600 text-slate-200 py-2 rounded-lg text-sm font-semibold">Chiudi</button>
+        </div>
+    </div>
+
+    <!-- Main Logic connected to Firestore -->
+    <script>
+        let games = [];
+        let presets = JSON.parse(localStorage.getItem('bg_shelf_presets')) || [
+            { name: 'Serata 4 Giocatori', filters: { players: 4, time: 240, weight: 'all', ownership: 'all' } },
+            { name: 'Fillers Veloci (< 60m)', filters: { players: '', time: 60, weight: 'light', ownership: 'all' } }
+        ];
+
+        // Sincronizzazione Realtime Firestore
+        window.addEventListener('load', () => {
+            const checkFirebase = setInterval(() => {
+                if (window.db && window.firestoreMethods) {
+                    clearInterval(checkFirebase);
+                    initFirestoreSync();
+                }
+            }, 100);
+        });
+
+        function initFirestoreSync() {
+            const { collection, onSnapshot } = window.firestoreMethods;
+            onSnapshot(collection(window.db, "games"), (snapshot) => {
+                games = [];
+                snapshot.forEach(doc => {
+                    games.push({ id: doc.id, ...doc.data() });
+                });
+                populateFilterOptions();
+                renderPresets();
+                applyFilters();
+            });
+        }
+
+        // Modal Helpers
+        function openModal(id) { 
+            const el = document.getElementById(id);
+            if (el) el.classList.remove('hidden'); 
+        }
+        function closeModal(id) { 
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden'); 
+        }
+
+        function openAddGameModal() {
+            document.getElementById('gameForm').reset();
+            document.getElementById('editGameId').value = '';
+            document.getElementById('modalTitle').innerText = 'Aggiungi Nuovo Gioco';
+            toggleOwnerNameInput();
+            openModal('addGameModal');
+        }
+
+        function toggleOwnerNameInput() {
+            const ownership = document.getElementById('gameOwnership').value;
+            const container = document.getElementById('ownerNameContainer');
+            if (ownership === 'friend') container.classList.remove('hidden');
+            else container.classList.add('hidden');
+        }
+
+        function updateTimeVal() {
+            const val = document.getElementById('filterTime').value;
+            document.getElementById('filterTimeVal').innerText = val >= 240 ? 'Tutti' : `${val} min`;
+        }
+
+        // BGG API Fetching Logic
+        async function fetchBGGData() {
+            const bggId = document.getElementById('bggIdInput').value.trim();
+            if (!bggId) return alert('Inserisci un ID BGG valido!');
+
+            try {
+                const proxyUrl = 'https://api.allorigins.win/raw?url=';
+                const bggUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${bggId}&stats=1`;
+                const res = await fetch(proxyUrl + encodeURIComponent(bggUrl));
+                const text = await res.text();
+                
+                const parser = new DOMParser();
+                const xml = parser.parseFromString(text, 'text/xml');
+                const item = xml.querySelector('item');
+
+                if (!item) return alert('Gioco non trovato su BGG.');
+
+                document.getElementById('gameTitle').value = item.querySelector('name[type="primary"]')?.getAttribute('value') || '';
+                document.getElementById('gameMinPlayers').value = item.querySelector('minplayers')?.getAttribute('value') || 1;
+                document.getElementById('gameMaxPlayers').value = item.querySelector('maxplayers')?.getAttribute('value') || 4;
+                document.getElementById('gamePlayTime').value = item.querySelector('playingtime')?.getAttribute('value') || 60;
+                document.getElementById('gameCoverUrl').value = item.querySelector('image')?.textContent || item.querySelector('thumbnail')?.textContent || '';
+
+                const weight = xml.querySelector('averageweight')?.getAttribute('value');
+                if (weight) document.getElementById('gameWeight').value = parseFloat(weight).toFixed(1);
+
+                const rating = xml.querySelector('average')?.getAttribute('value');
+                if (rating) document.getElementById('gameBggRating').value = parseFloat(rating).toFixed(1);
+
+                // Categories & Families
+                const categories = Array.from(xml.querySelectorAll('link[type="boardgamecategory"]')).map(el => el.getAttribute('value'));
+                const families = Array.from(xml.querySelectorAll('link[type="boardgamefamily"]')).map(el => el.getAttribute('value'));
+
+                document.getElementById('gameThemes').value = categories.join(', ');
+                document.getElementById('gameSeries').value = families.slice(0, 3).join(', ');
+
+                alert('Dati importati con successo da BoardGameGeek!');
+            } catch (err) {
+                console.error(err);
+                alert('Errore durante la connessione a BGG. Verificare l'ID.');
+            }
+        }
+
+        // Filter Dropdowns Populator
+        function populateFilterOptions() {
+            const themeSet = new Set();
+            const seriesSet = new Set();
+
+            games.forEach(g => {
+                (g.themes || []).forEach(t => themeSet.add(t));
+                (g.series || []).forEach(s => seriesSet.add(s));
+            });
+
+            const themeSelect = document.getElementById('filterTheme');
+            if (themeSelect) {
+                themeSelect.innerHTML = '<option value="all">Tutti i Temi</option>';
+                Array.from(themeSet).sort().forEach(t => {
+                    themeSelect.innerHTML += `<option value="${t}">${t}</option>`;
+                });
+            }
+
+            const seriesSelect = document.getElementById('filterSeries');
+            if (seriesSelect) {
+                seriesSelect.innerHTML = '<option value="all">Tutte le Serie</option>';
+                Array.from(seriesSet).sort().forEach(s => {
+                    seriesSelect.innerHTML += `<option value="${s}">${s}</option>`;
+                });
+            }
+        }
+
+        // Filtering Engine
+        function applyFilters() {
+            const search = document.getElementById('filterSearch').value.toLowerCase();
+            const ownership = document.getElementById('filterOwnership').value;
+            const players = parseInt(document.getElementById('filterPlayers').value) || null;
+            const maxTime = parseInt(document.getElementById('filterTime').value);
+            const weightCategory = document.getElementById('filterWeight').value;
+            const theme = document.getElementById('filterTheme').value;
+            const series = document.getElementById('filterSeries').value;
+            const sort = document.getElementById('filterSort').value;
+
+            let filtered = games.filter(g => {
+                if (search && !g.title.toLowerCase().includes(search)) return false;
+                if (ownership !== 'all' && g.ownership !== ownership) return false;
+                if (players && (players < g.minPlayers || players > g.maxPlayers)) return false;
+                if (maxTime < 240 && g.playTimeMinutes > maxTime) return false;
+
+                if (weightCategory === 'light' && (g.weight > 2.0)) return false;
+                if (weightCategory === 'medium' && (g.weight <= 2.0 || g.weight > 3.2)) return false;
+                if (weightCategory === 'heavy' && (g.weight <= 3.2)) return false;
+
+                if (theme !== 'all' && !(g.themes || []).includes(theme)) return false;
+                if (series !== 'all' && !(g.series || []).includes(series)) return false;
+
+                return true;
+            });
+
+            // Sorting Engine
+            filtered.sort((a, b) => {
+                if (sort === 'personalRating') return getAvgRating(b) - getAvgRating(a);
+                if (sort === 'bggRating') return (b.bggRating || 0) - (a.bggRating || 0);
+                if (sort === 'plays') return (b.playLogs || []).length - (a.playLogs || []).length;
+                if (sort === 'weightAsc') return (a.weight || 0) - (b.weight || 0);
+                if (sort === 'weightDesc') return (b.weight || 0) - (a.weight || 0);
+                if (sort === 'timeAsc') return (a.playTimeMinutes || 0) - (b.playTimeMinutes || 0);
+                if (sort === 'title') return a.title.localeCompare(b.title);
+                return 0;
+            });
+
+            document.getElementById('gameCount').innerText = filtered.length;
+            renderGames(filtered);
+        }
+
+        function getAvgRating(game) {
+            if (!game.playLogs || game.playLogs.length === 0) return 0;
+            const sum = game.playLogs.reduce((acc, log) => acc + parseFloat(log.rating), 0);
+            return (sum / game.playLogs.length).toFixed(1);
+        }
+
+        // Render Cards
+        function renderGames(items) {
+            const grid = document.getElementById('gamesGrid');
+            grid.innerHTML = '';
+
+            if (items.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full bg-slate-800 p-8 rounded-xl border border-slate-700 text-center text-slate-400">
+                        Nessun gioco presente in collezione. Clicca su "+ Nuovo" per aggiungerne uno!
+                    </div>`;
+                return;
+            }
+
+            items.forEach(g => {
+                const avgPersonal = getAvgRating(g);
+                const ownerBadge = g.ownership === 'friend' 
+                    ? `<span class="bg-amber-900/60 text-amber-300 border border-amber-700 text-[10px] px-2 py-0.5 rounded-full">Di ${g.ownerName || 'Amico'}</span>`
+                    : `<span class="bg-brand-900/60 text-brand-300 border border-brand-700 text-[10px] px-2 py-0.5 rounded-full">Mio</span>`;
+
+                grid.innerHTML += `
+                    <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-lg flex flex-col hover:border-slate-600 transition">
+                        <div class="h-44 bg-slate-900 relative overflow-hidden flex items-center justify-center">
+                            ${g.coverUrl 
+                                ? `<img src="${g.coverUrl}" class="w-full h-full object-cover">`
+                                : `<span class="text-slate-600 font-bold">Nessuna Immagine</span>`}
+                            <div class="absolute top-2 left-2 flex gap-1">${ownerBadge}</div>
+                        </div>
+
+                        <div class="p-4 flex-1 flex flex-col justify-between">
+                            <div>
+                                <h3 class="font-bold text-white text-base leading-tight mb-1">${g.title}</h3>
+                                
+                                <div class="flex flex-wrap gap-1 mb-3">
+                                    ${(g.themes || []).map(t => `<span class="bg-slate-700 text-slate-300 text-[10px] px-1.5 py-0.5 rounded">${t}</span>`).join('')}
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-2 text-xs text-slate-300 mb-3 bg-slate-900/50 p-2 rounded-lg border border-slate-700/50">
+                                    <div>Giocatori: <strong class="text-white">${g.minPlayers}-${g.maxPlayers}</strong></div>
+                                    <div>Durata: <strong class="text-white">${g.playTimeMinutes}m</strong></div>
+                                    <div>Peso BGG: <strong class="text-white">${g.weight || '-'}</strong></div>
+                                    <div>Voto BGG: <strong class="text-white">${g.bggRating || '-'}</strong></div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between items-center text-xs text-slate-400 pt-2 border-t border-slate-700 mb-3">
+                                    <span>Partite: <strong>${(g.playLogs || []).length}</strong></span>
+                                    <span>Media Gruppo: <strong class="text-brand-500 font-bold">${avgPersonal > 0 ? avgPersonal + '/10' : '-'}</strong></span>
+                                </div>
+
+                                <div class="flex gap-2">
+                                    <button onclick="openLogPlayModal('${g.id}')" class="flex-1 bg-brand-600/20 hover:bg-brand-600/40 text-brand-400 border border-brand-700/50 text-xs py-1.5 rounded-lg font-semibold transition">
+                                        + Partita
+                                    </button>
+                                    <button onclick="editGame('${g.id}')" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded-lg text-xs font-semibold">
+                                        Modifica
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        // Save Game to Firestore
+        async function saveGame(e) {
+            e.preventDefault();
+            const editId = document.getElementById('editGameId').value;
+            const title = document.getElementById('gameTitle').value;
+            const ownership = document.getElementById('gameOwnership').value;
+            const ownerName = document.getElementById('gameOwnerName').value;
+            const minPlayers = parseInt(document.getElementById('gameMinPlayers').value);
+            const maxPlayers = parseInt(document.getElementById('gameMaxPlayers').value);
+            const playTimeMinutes = parseInt(document.getElementById('gamePlayTime').value) || 60;
+            const weight = parseFloat(document.getElementById('gameWeight').value) || 2.5;
+            const bggRating = parseFloat(document.getElementById('gameBggRating').value) || 7.0;
+            const themes = document.getElementById('gameThemes').value.split(',').map(s => s.trim()).filter(Boolean);
+            const series = document.getElementById('gameSeries').value.split(',').map(s => s.trim()).filter(Boolean);
+            const coverUrl = document.getElementById('gameCoverUrl').value;
+            const notes = document.getElementById('gameNotes').value;
+
+            const { collection, addDoc, doc, updateDoc } = window.firestoreMethods;
+
+            const payload = {
+                title, ownership, ownerName, minPlayers, maxPlayers,
+                playTimeMinutes, weight, bggRating, themes, series, coverUrl, notes
+            };
+
+            try {
+                if (editId) {
+                    await updateDoc(doc(window.db, "games", editId), payload);
+                } else {
+                    payload.playLogs = [];
+                    await addDoc(collection(window.db, "games"), payload);
+                }
+                closeModal('addGameModal');
+                document.getElementById('gameForm').reset();
+            } catch (err) {
+                console.error("Errore salvataggio Firestore:", err);
+                alert("Impossibile salvare su Firestore. Controlla le regole del database.");
+            }
+        }
+
+        function editGame(id) {
+            const g = games.find(x => x.id === id);
+            if (!g) return;
+
+            document.getElementById('modalTitle').innerText = 'Modifica Gioco';
+            document.getElementById('editGameId').value = g.id;
+            document.getElementById('gameTitle').value = g.title;
+            document.getElementById('gameOwnership').value = g.ownership || 'owned';
+            document.getElementById('gameOwnerName').value = g.ownerName || '';
+            toggleOwnerNameInput();
+            document.getElementById('gameMinPlayers').value = g.minPlayers;
+            document.getElementById('gameMaxPlayers').value = g.maxPlayers;
+            document.getElementById('gamePlayTime').value = g.playTimeMinutes;
+            document.getElementById('gameWeight').value = g.weight;
+            document.getElementById('gameBggRating').value = g.bggRating;
+            document.getElementById('gameThemes').value = (g.themes || []).join(', ');
+            document.getElementById('gameSeries').value = (g.series || []).join(', ');
+            document.getElementById('gameCoverUrl').value = g.coverUrl || '';
+            document.getElementById('gameNotes').value = g.notes || '';
+
+            openModal('addGameModal');
+        }
+
+        // Play Logging to Firestore
+        function openLogPlayModal(id) {
+            const g = games.find(x => x.id === id);
+            if (!g) return;
+            document.getElementById('logGameId').value = g.id;
+            document.getElementById('logGameTitle').innerText = g.title;
+            openModal('logPlayModal');
+        }
+
+        async function savePlayLog(e) {
+            e.preventDefault();
+            const id = document.getElementById('logGameId').value;
+            const count = parseInt(document.getElementById('logPlayerCount').value);
+            const rating = parseFloat(document.getElementById('logRating').value);
+
+            const g = games.find(x => x.id === id);
+            if (g) {
+                const logs = g.playLogs || [];
+                logs.push({ date: new Date().toISOString().split('T')[0], playerCount: count, rating });
+                
+                const { doc, updateDoc } = window.firestoreMethods;
+                try {
+                    await updateDoc(doc(window.db, "games", id), { playLogs: logs });
+                    closeModal('logPlayModal');
+                    document.getElementById('logPlayForm').reset();
+                } catch (err) {
+                    console.error("Errore salvataggio partita:", err);
+                    alert("Errore durante il salvataggio della partita su Firestore.");
+                }
+            }
+        }
+
+        // Random Game Picker
+        function pickRandomGame() {
+            const search = document.getElementById('filterSearch').value.toLowerCase();
+            const ownership = document.getElementById('filterOwnership').value;
+            const players = parseInt(document.getElementById('filterPlayers').value) || null;
+            const maxTime = parseInt(document.getElementById('filterTime').value);
+
+            let eligible = games.filter(g => {
+                if (search && !g.title.toLowerCase().includes(search)) return false;
+                if (ownership !== 'all' && g.ownership !== ownership) return false;
+                if (players && (players < g.minPlayers || players > g.maxPlayers)) return false;
+                if (maxTime < 240 && g.playTimeMinutes > maxTime) return false;
+                return true;
+            });
+
+            if (eligible.length === 0) return alert('Nessun gioco corrisponde ai filtri impostati per la pesca!');
+
+            const picked = eligible[Math.floor(Math.random() * eligible.length)];
+            const container = document.getElementById('randomPickContent');
+
+            container.innerHTML = `
+                <div class="font-bold text-xl text-white mb-2">${picked.title}</div>
+                ${picked.coverUrl ? `<img src="${picked.coverUrl}" class="h-40 mx-auto rounded-lg shadow-md mb-2">` : ''}
+                <div class="text-xs text-slate-300 space-y-1">
+                    <p>Giocatori: ${picked.minPlayers} - ${picked.maxPlayers}</p>
+                    <p>Durata: ${picked.playTimeMinutes} min | Peso: ${picked.weight}</p>
+                </div>
+            `;
+            openModal('randomPickModal');
+        }
+
+        // Preset System
+        function saveCurrentFiltersAsPreset() {
+            const name = prompt('Nome del Preset (es: Serata 4P, Filler Fast):');
+            if (!name) return;
+
+            const newPreset = {
+                name,
+                filters: {
+                    players: document.getElementById('filterPlayers').value,
+                    time: document.getElementById('filterTime').value,
+                    weight: document.getElementById('filterWeight').value,
+                    ownership: document.getElementById('filterOwnership').value
+                }
+            };
+
+            presets.push(newPreset);
+            localStorage.setItem('bg_shelf_presets', JSON.stringify(presets));
+            renderPresets();
+            alert('Preset salvato con successo!');
+        }
+
+        function renderPresets() {
+            const select = document.getElementById('presetSelectDesktop');
+            const list = document.getElementById('presetListContainer');
+
+            if (select) select.innerHTML = '<option value="">-- Seleziona un Preset --</option>';
+            if (list) list.innerHTML = '';
+
+            presets.forEach((p, idx) => {
+                if (select) select.innerHTML += `<option value="${idx}">${p.name}</option>`;
+
+                if (list) {
+                    list.innerHTML += `
+                        <div class="flex items-center justify-between bg-slate-900 p-2.5 rounded-lg border border-slate-700">
+                            <span class="text-sm text-slate-200 font-medium">${p.name}</span>
+                            <div class="flex gap-2">
+                                <button onclick="applyPresetByIdx(${idx})" class="bg-brand-600 text-white text-xs px-2.5 py-1 rounded hover:bg-brand-500 font-semibold">Applica</button>
+                                <button onclick="deletePreset(${idx})" class="text-red-400 hover:text-red-300 text-xs px-2 py-1">&times;</button>
+                            </div>
+                        </div>`;
+                }
+            });
+        }
+
+        function applySelectedPreset(idx) {
+            if (idx === "") return;
+            applyPresetByIdx(parseInt(idx));
+        }
+
+        function applyPresetByIdx(idx) {
+            const p = presets[idx];
+            if (!p) return;
+
+            document.getElementById('filterPlayers').value = p.filters.players || '';
+            document.getElementById('filterTime').value = p.filters.time || 240;
+            document.getElementById('filterWeight').value = p.filters.weight || 'all';
+            document.getElementById('filterOwnership').value = p.filters.ownership || 'all';
+
+            updateTimeVal();
+            applyFilters();
+            closeModal('presetModal');
+        }
+
+        function deletePreset(idx) {
+            presets.splice(idx, 1);
+            localStorage.setItem('bg_shelf_presets', JSON.stringify(presets));
+            renderPresets();
+        }
+
+        function resetFilters() {
+            document.getElementById('filterSearch').value = '';
+            document.getElementById('filterOwnership').value = 'all';
+            document.getElementById('filterPlayers').value = '';
+            document.getElementById('filterTime').value = 240;
+            document.getElementById('filterWeight').value = 'all';
+            document.getElementById('filterTheme').value = 'all';
+            document.getElementById('filterSeries').value = 'all';
+            document.getElementById('filterSort').value = 'personalRating';
+            updateTimeVal();
+            applyFilters();
+        }
+
+        function syncMobileFilters() {
+            document.getElementById('filterSearch').value = document.getElementById('mobileFilterSearch').value;
+            document.getElementById('filterOwnership').value = document.getElementById('mobileFilterOwnership').value;
+            document.getElementById('filterPlayers').value = document.getElementById('mobileFilterPlayers').value;
+            document.getElementById('filterWeight').value = document.getElementById('mobileFilterWeight').value;
+        }
+    </script>
+</body>
+</html>
