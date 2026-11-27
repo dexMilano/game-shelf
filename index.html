@@ -750,7 +750,7 @@
             const b = document.getElementById('fullscreenBtn');
             if (!b) return;
             const active = document.fullscreenElement || document.webkitFullscreenElement;
-            b.textContent = active ? '⤡' : '⛶';
+            b.textContent = active ? '\u2921' : '\u26F6';
             b.title = active ? 'Esci da schermo intero' : 'Schermo intero';
         }
         document.addEventListener('fullscreenchange', updateFullscreenBtn);
@@ -1364,10 +1364,8 @@
         }
 
         function pickRandomGame() {
-            // Si pesca tra i giochi del filtro corrente. Con "Proprietà = tutti" restano esclusi
-            // amici, wishlist e venduti (si gioca solo con i propri).
-            const ownership = document.getElementById('filterOwnership').value;
-            const eligible = lastFiltered.filter(g => ownership !== 'all' || (g.ownership || 'owned') === 'owned');
+            // Si pesca tra tutti i giochi del filtro corrente: il filtro (es. Proprietà) lo sceglie l'utente.
+            const eligible = lastFiltered;
 
             if (eligible.length === 0) return showToast("Nessun gioco tra quelli filtrati: cambia i filtri e riprova.", "error");
 
@@ -1571,14 +1569,14 @@
         };
 
         function normHeader(h) {
-            return String(h || '').replace(/^﻿/, '').trim().toLowerCase()
-                .normalize('NFD').replace(/[̀-ͯ]/g, '')
+            return String(h || '').replace(/^\uFEFF/, '').trim().toLowerCase()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
                 .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
         }
 
         // Parser CSV: gestisce virgolette, separatori dentro i campi e a-capo dentro i campi
         function parseCSV(text) {
-            text = String(text || '').replace(/^﻿/, '');
+            text = String(text || '').replace(/^\uFEFF/, '');
             const firstLine = text.split(/\r?\n/)[0] || '';
             const delim = [';', ',', '\t']
                 .map(d => [d, firstLine.split(d).length])
@@ -1710,7 +1708,7 @@
                 const cover = get(row, 'url_immagine');
                 const payload = {
                     title,
-                    isFavorite: /^(si|s|yes|y|true|1|x)$/i.test(get(row, 'preferito').normalize('NFD').replace(/[̀-ͯ]/g, '')),
+                    isFavorite: /^(si|s|yes|y|true|1|x)$/i.test(get(row, 'preferito').normalize('NFD').replace(/[\u0300-\u036f]/g, '')),
                     ownership,
                     ownerName: ownership === 'friend' ? get(row, 'nome_amico') : '',
                     minPlayers,
@@ -1732,7 +1730,7 @@
                 }
 
                 if (idx.lingua !== undefined) payload.language = /^(eng|en|english|inglese)$/i.test(get(row, 'lingua')) ? 'ENG' : 'ITA';
-                if (idx.da_vendere !== undefined) payload.forSale = /^(si|s|yes|y|true|1|x)$/i.test(get(row, 'da_vendere').normalize('NFD').replace(/[̀-ͯ]/g, ''));
+                if (idx.da_vendere !== undefined) payload.forSale = /^(si|s|yes|y|true|1|x)$/i.test(get(row, 'da_vendere').normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
                 if (idx.id_bgg !== undefined) payload.bggId = parseBggId(get(row, 'id_bgg'));
 
                 const logs = csvParsePlayLogs(get(row, 'partite'));
@@ -1744,7 +1742,7 @@
         }
 
         function downloadTextFile(filename, content) {
-            const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8' });
+            const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -1795,7 +1793,7 @@
                 const buf = await file.arrayBuffer();
                 let text = new TextDecoder('utf-8').decode(buf);
                 // File salvati da Excel in Windows-1252: ripiega sulla codifica corretta
-                if (text.includes('�')) text = new TextDecoder('windows-1252').decode(buf);
+                if (text.includes('\uFFFD')) text = new TextDecoder('windows-1252').decode(buf);
 
                 const parsed = csvRowsToGames(parseCSV(text));
                 if (parsed.error) return showToast(parsed.error, "error");
