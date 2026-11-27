@@ -45,16 +45,25 @@
 
     <!-- Header / Navbar -->
     <header class="bg-slate-800 border-b border-slate-700 sticky top-0 z-30 shadow-md">
-        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <div class="bg-brand-600 text-white p-2 rounded-lg font-bold text-xl">🎲</div>
-                <div>
-                    <h1 class="text-xl font-bold bg-gradient-to-r from-brand-500 to-emerald-400 bg-clip-text text-transparent">BoardGame Shelf</h1>
-                    <p class="text-xs text-slate-400 hidden sm:block">Filtra, scegli e traccia le tue serate di gioco (Firebase Live Sync)</p>
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-3 min-w-0">
+                <div class="bg-brand-600 text-white p-2 rounded-lg font-bold text-xl shrink-0">🎲</div>
+                <div class="min-w-0">
+                    <!-- Titolo principale con contatore totale giochi memorizzati -->
+                    <h1 class="text-lg sm:text-xl font-bold bg-gradient-to-r from-brand-500 to-emerald-400 bg-clip-text text-transparent truncate">
+                        BoardGame Shelf <span id="headerTotalCount" class="text-slate-300 font-semibold text-base sm:text-lg">(0)</span>
+                    </h1>
+                    <p class="text-xs text-slate-400 hidden sm:block">Filtra, scegli e traccia le tue serate di gioco</p>
                 </div>
             </div>
 
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 shrink-0">
+                <!-- Icona Stato Connessione Firebase -->
+                <div id="dbStatusBadge" title="Stato connessione database Firebase" class="flex items-center gap-1.5 bg-amber-950/70 text-amber-300 border border-amber-700/70 px-2.5 py-1 rounded-full text-xs font-medium">
+                    <span id="dbStatusDot" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+                    <span id="dbStatusText" class="hidden sm:inline">Firebase...</span>
+                </div>
+
                 <button type="button" onclick="openModal('presetModal')" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
                     <span>Preferiti</span>
                 </button>
@@ -158,7 +167,7 @@
         <main class="flex-1 flex flex-col gap-4">
             <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-wrap items-center justify-between gap-4 shadow">
                 <div>
-                    <span class="text-sm text-slate-400">Giochi Trovati:</span>
+                    <span class="text-sm text-slate-400">Giochi Trovati (Filtrati):</span>
                     <span id="gameCount" class="text-lg font-bold text-brand-500 ml-1">0</span>
                 </div>
 
@@ -201,7 +210,7 @@
                 <div class="bg-slate-900 p-3 rounded-xl border border-slate-700 space-y-2">
                     <label class="block text-xs font-semibold text-brand-500 uppercase tracking-wider">Importazione Automatica da BoardGameGeek</label>
                     <div class="flex gap-2">
-                        <input type="number" id="bggIdInput" placeholder="BGG Game ID (es: 13, 167791)" class="flex-1 bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg p-2 focus:border-brand-500 focus:outline-none">
+                        <input type="number" id="bggIdInput" placeholder="BGG Game ID (es: 362986)" class="flex-1 bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg p-2 focus:border-brand-500 focus:outline-none">
                         <button type="button" onclick="fetchBGGData()" class="bg-brand-600 hover:bg-brand-500 text-white px-3 py-2 rounded-lg text-xs font-bold transition shrink-0 flex items-center gap-1">
                             <span>Importa</span>
                         </button>
@@ -391,7 +400,39 @@
             { name: 'Fillers Veloci (< 60m)', filters: { players: '', time: 60, weight: 'light', ownership: 'all' } }
         ];
 
+        function setDbStatus(state) {
+            const badge = document.getElementById('dbStatusBadge');
+            const dot = document.getElementById('dbStatusDot');
+            const text = document.getElementById('dbStatusText');
+            if (!badge || !dot || !text) return;
+
+            if (state === 'connected') {
+                badge.className = 'flex items-center gap-1.5 bg-emerald-950/80 text-emerald-300 border border-emerald-700/80 px-2.5 py-1 rounded-full text-xs font-medium';
+                badge.title = 'Collegamento Firebase Firestore attivo (test-6a1c6)';
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
+                text.innerText = 'Firebase Attivo';
+            } else if (state === 'error') {
+                badge.className = 'flex items-center gap-1.5 bg-red-950/80 text-red-300 border border-red-700/80 px-2.5 py-1 rounded-full text-xs font-medium';
+                badge.title = 'Errore collegamento Firebase Firestore';
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-red-400';
+                text.innerText = 'Firebase Offline';
+            } else {
+                badge.className = 'flex items-center gap-1.5 bg-amber-950/70 text-amber-300 border border-amber-700/70 px-2.5 py-1 rounded-full text-xs font-medium';
+                badge.title = 'Connessione a Firebase Firestore in corso';
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
+                text.innerText = 'Firebase...';
+            }
+        }
+
+        function updateHeaderTotalCount() {
+            const el = document.getElementById('headerTotalCount');
+            if (el) {
+                el.innerText = `(${games.length})`;
+            }
+        }
+
         window.addEventListener('load', () => {
+            setDbStatus('connecting');
             populateFilterOptions();
             renderPresets();
             applyFilters();
@@ -407,15 +448,18 @@
         function initFirestoreSync() {
             const { collection, onSnapshot } = window.firestoreMethods;
             onSnapshot(collection(window.db, "games"), (snapshot) => {
+                setDbStatus('connected');
                 games = [];
                 snapshot.forEach(doc => {
                     games.push({ id: doc.id, ...doc.data() });
                 });
+                updateHeaderTotalCount();
                 populateFilterOptions();
                 renderPresets();
                 applyFilters();
             }, (err) => {
                 console.error("Errore lettura Firestore:", err);
+                setDbStatus('error');
             });
         }
 
@@ -665,6 +709,7 @@
                 document.getElementById('gameForm').reset();
             } catch (err) {
                 console.error("Errore salvataggio Firestore:", err);
+                setDbStatus('error');
                 alert("Impossibile salvare su Firestore. Controlla le regole del database.");
             }
         }
@@ -722,6 +767,7 @@
                     document.getElementById('logPlayForm').reset();
                 } catch (err) {
                     console.error("Errore salvataggio partita:", err);
+                    setDbStatus('error');
                     alert("Errore durante il salvataggio della partita su Firestore.");
                 }
             }
