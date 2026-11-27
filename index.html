@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>La Mia Collezione Giochi da Tavolo</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="tailwind.css">
 
     <!-- Firebase SDKs (Modular v10) -->
     <script type="module">
@@ -38,20 +38,11 @@
         }
     </script>
 
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        brand: { 50: '#f0fdf4', 100: '#dcfce7', 500: '#22c55e', 600: '#16a34a', 700: '#15803d', 900: '#14532d' }
-                    }
-                }
-            }
-        }
-    </script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col font-sans antialiased pb-20 md:pb-0">
+
+    <!-- Notifiche (sostituiscono gli alert) -->
+    <div id="toastContainer" class="fixed top-4 right-4 left-4 sm:left-auto sm:w-96 z-[60] flex flex-col gap-2 pointer-events-none"></div>
 
     <!-- Datalist per prefill Temi e Serie -->
     <datalist id="existingThemesList"></datalist>
@@ -185,7 +176,7 @@
                     </select>
                 </div>
 
-                <button type="button" onclick="saveCurrentFiltersAsPreset()" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs py-2 rounded-lg font-semibold transition border border-slate-600">
+                <button type="button" onclick="openPresetModalForSave()" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs py-2 rounded-lg font-semibold transition border border-slate-600">
                     Salva Filtri Correnti
                 </button>
             </div>
@@ -319,9 +310,12 @@
                     <textarea id="gameNotes" rows="2" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none"></textarea>
                 </div>
 
-                <div class="flex justify-end gap-2 pt-2">
-                    <button type="button" onclick="closeModal('addGameModal')" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-4 py-2 rounded-lg text-sm font-semibold">Annulla</button>
-                    <button type="submit" class="bg-brand-600 hover:bg-brand-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow">Salva</button>
+                <div class="flex items-center justify-between gap-2 pt-2">
+                    <button type="button" id="deleteGameBtn" onclick="deleteCurrentGame()" class="hidden bg-red-950/70 hover:bg-red-900 text-red-300 border border-red-800 px-4 py-2 rounded-lg text-sm font-semibold transition">Rimuovi</button>
+                    <div class="flex gap-2 ml-auto">
+                        <button type="button" onclick="closeModal('addGameModal')" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-4 py-2 rounded-lg text-sm font-semibold">Annulla</button>
+                        <button type="submit" class="bg-brand-600 hover:bg-brand-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow">Salva</button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -367,7 +361,9 @@
 
             <div id="presetListContainer" class="space-y-2 max-h-60 overflow-y-auto mb-4"></div>
 
-            <div class="pt-2 border-t border-slate-700">
+            <div class="pt-3 border-t border-slate-700 space-y-2">
+                <label class="block text-xs font-medium text-slate-300">Nome del nuovo preset</label>
+                <input type="text" id="presetNameInput" maxlength="40" placeholder="Es: Serata 4P, Filler veloce" onkeydown="if(event.key==='Enter'){event.preventDefault();saveCurrentFiltersAsPreset();}" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
                 <button type="button" onclick="saveCurrentFiltersAsPreset()" class="w-full bg-brand-600 hover:bg-brand-500 text-white py-2 rounded-lg text-sm font-bold shadow">
                     Salva Filtri Attuali come Nuovo Preset
                 </button>
@@ -432,10 +428,8 @@
     <script>
         let games = [];
         let lastHighlightedId = null;
-        let presets = JSON.parse(localStorage.getItem('bg_shelf_presets')) || [
-            { name: 'Serata 4 Giocatori', filters: { players: 4, time: 240, weight: 'all', ownership: 'all' } },
-            { name: 'Fillers Veloci (< 60m)', filters: { players: '', time: 60, weight: 'light', ownership: 'all' } }
-        ];
+        let presets = [];
+        let presetsMigrationDone = false;
 
         function describeFirebaseError(err) {
             const code = (err && err.code) || '';
@@ -526,6 +520,7 @@
         function initFirestoreSync() {
             const { collection, onSnapshot } = window.firestoreMethods;
             let gotServerData = false;
+            initPresetsSync();
 
             // Se dopo 12s non è arrivato nulla dal server, segnala il problema
             const watchdog = setTimeout(() => {
@@ -574,11 +569,82 @@
         }
 
         function closeModal(id) {
+            if (id === 'addGameModal') resetDeleteButton();
             const el = document.getElementById(id);
             if (el) el.classList.add('hidden');
         }
 
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            if (!container) return;
+            const styles = {
+                success: 'bg-emerald-900/95 border-emerald-600 text-emerald-100',
+                error: 'bg-red-950/95 border-red-700 text-red-100',
+                info: 'bg-slate-800/95 border-slate-600 text-slate-100'
+            };
+            const el = document.createElement('div');
+            el.className = `pointer-events-auto border rounded-lg shadow-xl px-4 py-2.5 text-sm transition-opacity duration-300 opacity-0 ${styles[type] || styles.info}`;
+            el.textContent = message;
+            container.appendChild(el);
+            requestAnimationFrame(() => { el.classList.remove('opacity-0'); });
+            const ttl = type === 'error' ? 6000 : 3000;
+            setTimeout(() => {
+                el.classList.add('opacity-0');
+                setTimeout(() => el.remove(), 300);
+            }, ttl);
+        }
+
+        let deleteConfirmTimer = null;
+
+        function resetDeleteButton() {
+            clearTimeout(deleteConfirmTimer);
+            const btn = document.getElementById('deleteGameBtn');
+            if (!btn) return;
+            btn.innerText = 'Rimuovi';
+            btn.dataset.armed = '';
+            btn.className = 'hidden bg-red-950/70 hover:bg-red-900 text-red-300 border border-red-800 px-4 py-2 rounded-lg text-sm font-semibold transition';
+        }
+
+        function showDeleteButton() {
+            const btn = document.getElementById('deleteGameBtn');
+            if (!btn) return;
+            resetDeleteButton();
+            btn.classList.remove('hidden');
+        }
+
+        // Rimozione in due passaggi (niente confirm()): primo click arma il pulsante, secondo conferma
+        async function deleteCurrentGame() {
+            const id = document.getElementById('editGameId').value;
+            if (!id) return;
+            const btn = document.getElementById('deleteGameBtn');
+
+            if (btn.dataset.armed !== 'true') {
+                btn.dataset.armed = 'true';
+                btn.innerText = 'Confermi? Clicca di nuovo';
+                btn.className = 'bg-red-600 hover:bg-red-500 text-white border border-red-400 px-4 py-2 rounded-lg text-sm font-bold transition';
+                deleteConfirmTimer = setTimeout(() => { resetDeleteButton(); btn.classList.remove('hidden'); }, 4000);
+                return;
+            }
+
+            if (!window.db || !window.firestoreMethods) return showToast("Firebase non ancora inizializzato.", "error");
+            const { doc, deleteDoc } = window.firestoreMethods;
+            const title = document.getElementById('gameTitle').value;
+            try {
+                await deleteDoc(doc(window.db, "games", id));
+                if (lastHighlightedId === id) lastHighlightedId = null;
+                closeModal('addGameModal');
+                document.getElementById('gameForm').reset();
+                resetDeleteButton();
+                showToast(`"${title}" rimosso`, "success");
+            } catch (err) {
+                console.error("Errore rimozione gioco:", err);
+                showToast(`Impossibile rimuovere: ${err.code || ''} ${err.message || ''}`, "error");
+                showDbError('Errore rimozione gioco.', err);
+            }
+        }
+
         function openAddGameModal() {
+            resetDeleteButton();
             document.getElementById('gameForm').reset();
             document.getElementById('editGameId').value = '';
             document.getElementById('gameIsFavorite').value = 'false';
@@ -633,7 +699,7 @@
 
         async function fetchBGGData() {
             const bggId = document.getElementById('bggIdInput').value.trim();
-            if (!bggId) return alert("Inserisci un ID BGG valido.");
+            if (!bggId) return showToast("Inserisci un ID BGG valido.", "error");
 
             const btn = document.getElementById('bggImportBtn');
             const originalText = btn ? btn.innerText : 'Importa';
@@ -655,7 +721,7 @@
 
                 if (!item) {
                     if (btn) btn.innerText = originalText;
-                    return alert("Gioco non trovato su BGG. Verifica l'ID inserito.");
+                    return showToast("Gioco non trovato su BGG. Verifica l'ID inserito.", "error");
                 }
 
                 const nameEl = item.querySelector('name[type="primary"]') || item.querySelector('name');
@@ -701,10 +767,10 @@
                 document.getElementById('gameThemes').value = categories.join(', ');
                 document.getElementById('gameSeries').value = families.slice(0, 3).join(', ');
 
-                alert(`Dati di "${document.getElementById('gameTitle').value}" importati con successo da BGG!`);
+                showToast(`Dati di "${document.getElementById('gameTitle').value}" importati da BGG`, "success");
             } catch (err) {
                 console.error("Errore fetch BGG:", err);
-                alert("Impossibile connettersi a BGG tramite il proxy. Puoi inserire i dati manualmente.");
+                showToast("Impossibile connettersi a BGG tramite il proxy. Puoi inserire i dati manualmente.", "error");
             } finally {
                 if (btn) btn.innerText = originalText;
             }
@@ -824,7 +890,7 @@
                     ? `<span class="bg-amber-900/60 text-amber-300 border border-amber-700 text-[10px] px-2 py-0.5 rounded-full">Amico${g.ownerName ? ': ' + g.ownerName : ''}</span>`
                     : `<span class="bg-brand-900/60 text-brand-300 border border-brand-700 text-[10px] px-2 py-0.5 rounded-full">Mio</span>`;
 
-                const bestWithBadge = g.bestWith ? `<span class="text-brand-400 font-semibold">(ideale: ${g.bestWith})</span>` : '';
+                const bestWithBadge = g.bestWith ? `<span class="text-brand-400 font-semibold" title="Numero ideale di giocatori">(${g.bestWith})</span>` : '';
 
                 grid.innerHTML += `
                     <div id="gameCard-${g.id}" onclick="editGame('${g.id}')" class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-lg flex flex-col hover:border-slate-500 cursor-pointer transition">
@@ -832,6 +898,10 @@
                             ${g.coverUrl
                                 ? `<img src="${g.coverUrl}" class="w-full h-full object-cover">`
                                 : `<span class="text-slate-600 font-bold">Nessuna Immagine</span>`}
+
+                            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-3 pt-10 pb-2 pointer-events-none">
+                                <h3 class="font-bold text-white text-lg leading-tight drop-shadow-[0_2px_3px_rgba(0,0,0,0.9)]">${g.title}</h3>
+                            </div>
 
                             <div class="absolute top-2 left-2 flex gap-1">${ownerBadge}</div>
 
@@ -842,10 +912,6 @@
 
                         <div class="p-4 flex-1 flex flex-col justify-between">
                             <div>
-                                <h3 class="font-bold text-white text-base leading-tight mb-1 flex items-center justify-between">
-                                    <span>${g.title}</span>
-                                </h3>
-
                                 <div class="flex flex-wrap gap-1 mb-3">
                                     ${(g.themes || []).map(t => `<span class="bg-slate-700 text-slate-300 text-[10px] px-1.5 py-0.5 rounded">${t}</span>`).join('')}
                                 </div>
@@ -892,7 +958,7 @@
         async function saveGame(e) {
             e.preventDefault();
             if (!window.db || !window.firestoreMethods) {
-                return alert("Firebase non ancora inizializzato. Attendi qualche secondo e riprova.");
+                return showToast("Firebase non ancora inizializzato. Attendi qualche secondo e riprova.", "error");
             }
 
             const editId = document.getElementById('editGameId').value;
@@ -928,6 +994,7 @@
                 }
 
                 lastHighlightedId = targetId;
+                showToast(editId ? "Gioco aggiornato" : "Gioco aggiunto", "success");
 
                 closeModal('addGameModal');
                 document.getElementById('gameForm').reset();
@@ -935,7 +1002,7 @@
             } catch (err) {
                 console.error("Errore salvataggio Firestore:", err);
                 setDbStatus('error');
-                alert(`Impossibile salvare su Firestore.\n${err.code || ''} ${err.message || ''}`);
+                showToast(`Impossibile salvare: ${err.code || ''} ${err.message || ''}`, "error");
                 showDbError('Errore salvataggio.', err);
             }
         }
@@ -965,6 +1032,7 @@
             document.getElementById('gameCoverUrl').value = g.coverUrl || '';
             document.getElementById('gameNotes').value = g.notes || '';
 
+            showDeleteButton();
             openModal('addGameModal');
         }
 
@@ -979,7 +1047,7 @@
         async function savePlayLog(e) {
             e.preventDefault();
             if (!window.db || !window.firestoreMethods) {
-                return alert("Firebase non ancora inizializzato.");
+                return showToast("Firebase non ancora inizializzato.", "error");
             }
 
             const id = document.getElementById('logGameId').value;
@@ -995,13 +1063,14 @@
                 try {
                     await updateDoc(doc(window.db, "games", id), { playLogs: logs });
                     lastHighlightedId = id;
+                    showToast("Partita registrata", "success");
                     closeModal('logPlayModal');
                     document.getElementById('logPlayForm').reset();
                     highlightAndScrollToGame(id);
                 } catch (err) {
                     console.error("Errore salvataggio partita:", err);
                     setDbStatus('error');
-                    alert(`Errore durante il salvataggio della partita.\n${err.code || ''} ${err.message || ''}`);
+                    showToast(`Errore salvataggio partita: ${err.code || ''} ${err.message || ''}`, "error");
                     showDbError('Errore salvataggio partita.', err);
                 }
             }
@@ -1023,7 +1092,7 @@
                 return true;
             });
 
-            if (eligible.length === 0) return alert("Nessun gioco corrisponde ai filtri impostati per la pesca.");
+            if (eligible.length === 0) return showToast("Nessun gioco corrisponde ai filtri impostati per la pesca.", "error");
 
             const picked = eligible[Math.floor(Math.random() * eligible.length)];
             const container = document.getElementById('randomPickContent');
@@ -1032,31 +1101,82 @@
                 <div class="font-bold text-xl text-white mb-2">${picked.title}</div>
                 ${picked.coverUrl ? `<img src="${picked.coverUrl}" class="h-40 mx-auto rounded-lg shadow-md mb-2">` : ''}
                 <div class="text-xs text-slate-300 space-y-1">
-                    <p>Giocatori: ${picked.minPlayers} - ${picked.maxPlayers} ${picked.bestWith ? '(ideale: ' + picked.bestWith + ')' : ''}</p>
+                    <p>Giocatori: ${picked.minPlayers} - ${picked.maxPlayers} ${picked.bestWith ? '(' + picked.bestWith + ')' : ''}</p>
                     <p>Durata: ${picked.playTimeMinutes} min | Peso: ${picked.weight}</p>
                 </div>
             `;
             openModal('randomPickModal');
         }
 
-        function saveCurrentFiltersAsPreset() {
-            const name = prompt('Nome del Preset (es: Serata 4P, Filler Fast):');
-            if (!name) return;
+        function openPresetModalForSave() {
+            openModal('presetModal');
+            const input = document.getElementById('presetNameInput');
+            if (input) setTimeout(() => input.focus(), 50);
+        }
 
-            const newPreset = {
-                name,
-                filters: {
-                    players: document.getElementById('filterPlayers').value,
-                    time: document.getElementById('filterTime').value,
-                    weight: document.getElementById('filterWeight').value,
-                    ownership: document.getElementById('filterOwnership').value
-                }
+        function currentFiltersSnapshot() {
+            const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+            return {
+                players: val('filterPlayers'),
+                time: val('filterTime'),
+                weight: val('filterWeight') || 'all',
+                ownership: val('filterOwnership') || 'all',
+                favorite: val('filterFavorite') || 'all',
+                theme: val('filterTheme') || 'all',
+                series: val('filterSeries') || 'all',
+                sort: val('filterSort') || 'personalRating'
             };
+        }
 
-            presets.push(newPreset);
-            localStorage.setItem('bg_shelf_presets', JSON.stringify(presets));
-            renderPresets();
-            alert("Preset salvato con successo.");
+        async function saveCurrentFiltersAsPreset() {
+            if (!window.db || !window.firestoreMethods) return showToast("Firebase non ancora inizializzato.", "error");
+            const input = document.getElementById('presetNameInput');
+            const name = (input ? input.value : '').trim();
+            if (!name) {
+                if (input) input.focus();
+                return showToast("Inserisci un nome per il preset.", "error");
+            }
+
+            const { collection, addDoc } = window.firestoreMethods;
+            try {
+                await addDoc(collection(window.db, "presets"), { name, filters: currentFiltersSnapshot() });
+                if (input) input.value = '';
+                showToast(`Preset "${name}" salvato`, "success");
+            } catch (err) {
+                console.error("Errore salvataggio preset:", err);
+                showToast(`Impossibile salvare il preset: ${err.code || ''} ${err.message || ''}`, "error");
+                showDbError('Errore salvataggio preset.', err);
+            }
+        }
+
+        function initPresetsSync() {
+            const { collection, onSnapshot, addDoc } = window.firestoreMethods;
+            onSnapshot(collection(window.db, "presets"), async (snapshot) => {
+                presets = [];
+                snapshot.forEach(d => presets.push({ id: d.id, ...d.data() }));
+                presets.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                renderPresets();
+
+                // Migrazione una tantum dei preset salvati in localStorage (versioni precedenti)
+                if (!presetsMigrationDone && !snapshot.metadata.fromCache) {
+                    presetsMigrationDone = true;
+                    try {
+                        const old = JSON.parse(localStorage.getItem('bg_shelf_presets') || 'null');
+                        if (snapshot.empty && Array.isArray(old) && old.length) {
+                            for (const p of old) {
+                                await addDoc(collection(window.db, "presets"), { name: p.name, filters: p.filters || {} });
+                            }
+                            showToast(`${old.length} preset migrati su Firebase`, "success");
+                        }
+                        if (Array.isArray(old)) localStorage.removeItem('bg_shelf_presets');
+                    } catch (e) {
+                        console.warn("Migrazione preset non riuscita:", e);
+                    }
+                }
+            }, (err) => {
+                console.error("Errore lettura preset:", err);
+                showToast(`Impossibile leggere i preset: ${err.code || ''}. Controlla le Rules per la collezione "presets".`, "error");
+            });
         }
 
         function renderPresets() {
@@ -1064,7 +1184,7 @@
             const list = document.getElementById('presetListContainer');
 
             if (select) select.innerHTML = '<option value="">-- Seleziona un Preset --</option>';
-            if (list) list.innerHTML = '';
+            if (list) list.innerHTML = presets.length ? '' : '<p class="text-xs text-slate-500 text-center py-2">Nessun preset salvato.</p>';
 
             presets.forEach((p, idx) => {
                 if (select) select.innerHTML += `<option value="${idx}">${p.name}</option>`;
@@ -1075,7 +1195,7 @@
                             <span class="text-sm text-slate-200 font-medium">${p.name}</span>
                             <div class="flex gap-2">
                                 <button type="button" onclick="applyPresetByIdx(${idx})" class="bg-brand-600 text-white text-xs px-2.5 py-1 rounded hover:bg-brand-500 font-semibold">Applica</button>
-                                <button type="button" onclick="deletePreset(${idx})" class="text-red-400 hover:text-red-300 text-xs px-2 py-1">&times;</button>
+                                <button type="button" onclick="deletePreset(${idx})" class="text-red-400 hover:text-red-300 text-xs px-2 py-1" title="Elimina preset">&times;</button>
                             </div>
                         </div>`;
                 }
@@ -1087,24 +1207,45 @@
             applyPresetByIdx(parseInt(idx));
         }
 
+        function setSelectValue(id, value, fallback) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const exists = Array.from(el.options).some(o => o.value === String(value));
+            el.value = exists ? String(value) : fallback;
+        }
+
         function applyPresetByIdx(idx) {
             const p = presets[idx];
             if (!p) return;
+            const f = p.filters || {};
 
-            document.getElementById('filterPlayers').value = p.filters.players || '';
-            document.getElementById('filterTime').value = p.filters.time || 240;
-            document.getElementById('filterWeight').value = p.filters.weight || 'all';
-            document.getElementById('filterOwnership').value = p.filters.ownership || 'all';
+            document.getElementById('filterPlayers').value = f.players || '';
+            document.getElementById('filterTime').value = f.time || 240;
+            setSelectValue('filterWeight', f.weight || 'all', 'all');
+            setSelectValue('filterOwnership', f.ownership || 'all', 'all');
+            setSelectValue('filterFavorite', f.favorite || 'all', 'all');
+            setSelectValue('filterTheme', f.theme || 'all', 'all');
+            setSelectValue('filterSeries', f.series || 'all', 'all');
+            setSelectValue('filterSort', f.sort || 'personalRating', 'personalRating');
 
             updateTimeVal();
             applyFilters();
             closeModal('presetModal');
+            const sel = document.getElementById('presetSelectDesktop');
+            if (sel) sel.value = '';
         }
 
-        function deletePreset(idx) {
-            presets.splice(idx, 1);
-            localStorage.setItem('bg_shelf_presets', JSON.stringify(presets));
-            renderPresets();
+        async function deletePreset(idx) {
+            const p = presets[idx];
+            if (!p || !p.id) return;
+            const { doc, deleteDoc } = window.firestoreMethods;
+            try {
+                await deleteDoc(doc(window.db, "presets", p.id));
+                showToast(`Preset "${p.name}" eliminato`, "success");
+            } catch (err) {
+                console.error("Errore eliminazione preset:", err);
+                showToast(`Impossibile eliminare il preset: ${err.code || ''}`, "error");
+            }
         }
 
         function resetFilters() {
