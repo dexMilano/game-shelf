@@ -22,7 +22,7 @@
         };
 
         const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+        const db = getFirestore(app, "game-shelf");
 
         window.db = db;
         window.firestoreMethods = { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, onSnapshot };
@@ -43,13 +43,16 @@
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col font-sans antialiased pb-20 md:pb-0">
 
+    <!-- Datalist per prefill Temi e Serie -->
+    <datalist id="existingThemesList"></datalist>
+    <datalist id="existingSeriesList"></datalist>
+
     <!-- Header / Navbar -->
     <header class="bg-slate-800 border-b border-slate-700 sticky top-0 z-30 shadow-md">
         <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
             <div class="flex items-center gap-3 min-w-0">
                 <div class="bg-brand-600 text-white p-2 rounded-lg font-bold text-xl shrink-0">🎲</div>
                 <div class="min-w-0">
-                    <!-- Titolo principale con contatore totale giochi memorizzati -->
                     <h1 class="text-lg sm:text-xl font-bold bg-gradient-to-r from-brand-500 to-emerald-400 bg-clip-text text-transparent truncate">
                         BoardGame Shelf <span id="headerTotalCount" class="text-slate-300 font-semibold text-base sm:text-lg">(0)</span>
                     </h1>
@@ -58,14 +61,13 @@
             </div>
 
             <div class="flex items-center gap-2 shrink-0">
-                <!-- Icona Stato Connessione Firebase -->
                 <div id="dbStatusBadge" title="Stato connessione database Firebase" class="flex items-center gap-1.5 bg-amber-950/70 text-amber-300 border border-amber-700/70 px-2.5 py-1 rounded-full text-xs font-medium">
                     <span id="dbStatusDot" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
                     <span id="dbStatusText" class="hidden sm:inline">Firebase...</span>
                 </div>
 
                 <button type="button" onclick="openModal('presetModal')" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
-                    <span>Preferiti</span>
+                    <span>Preset</span>
                 </button>
                 <button type="button" onclick="openAddGameModal()" class="bg-brand-600 hover:bg-brand-500 text-white px-3.5 py-1.5 rounded-lg text-sm font-semibold transition shadow flex items-center gap-1.5">
                     <span>+ Nuovo</span>
@@ -77,14 +79,13 @@
     <!-- App Main Container -->
     <div class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full flex flex-col md:flex-row gap-6">
 
-        <!-- Sidebar Filtri (Desktop) -->
+        <!-- Sidebar Filtri -->
         <aside class="w-full md:w-72 bg-slate-800 p-5 rounded-xl border border-slate-700 shrink-0 hidden md:block h-fit sticky top-20 shadow-lg">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-base font-bold text-white uppercase tracking-wider">Filtri Serata</h2>
                 <button type="button" onclick="resetFilters()" class="text-xs text-brand-500 hover:underline">Reset</button>
             </div>
 
-            <!-- Preset Rapidi -->
             <div class="mb-5 pb-4 border-b border-slate-700">
                 <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Preset Salvati</label>
                 <select id="presetSelectDesktop" onchange="applySelectedPreset(this.value)" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
@@ -99,11 +100,19 @@
                 </div>
 
                 <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Preferiti / Tutti</label>
+                    <select id="filterFavorite" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                        <option value="all">Tutti i giochi</option>
+                        <option value="fav">Solo Preferiti ⭐</option>
+                    </select>
+                </div>
+
+                <div>
                     <label class="block text-xs font-medium text-slate-300 mb-1">Proprietà</label>
                     <select id="filterOwnership" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
                         <option value="all">Tutti i giochi</option>
                         <option value="owned">Solo miei</option>
-                        <option value="friend">Di un amico</option>
+                        <option value="friend">Amico</option>
                     </select>
                 </div>
 
@@ -163,7 +172,7 @@
             </div>
         </aside>
 
-        <!-- Sezione Principale Risultati -->
+        <!-- Sezione Risultati -->
         <main class="flex-1 flex flex-col gap-4">
             <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-wrap items-center justify-between gap-4 shadow">
                 <div>
@@ -186,7 +195,7 @@
             <span>Filtri</span>
         </button>
         <button type="button" onclick="openModal('presetModal')" class="flex flex-col items-center text-slate-400 hover:text-brand-500 text-xs py-1">
-            <span>Preferiti</span>
+            <span>Preset</span>
         </button>
         <button type="button" onclick="pickRandomGame()" class="bg-brand-600 text-white p-3 rounded-full -mt-6 shadow-xl border-4 border-slate-900 font-bold">
             🎲
@@ -200,18 +209,22 @@
     <div id="addGameModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 shadow-2xl">
             <div class="flex justify-between items-center mb-4">
-                <h3 id="modalTitle" class="text-lg font-bold text-white">Aggiungi Nuovo Gioco</h3>
+                <div class="flex items-center gap-2">
+                    <h3 id="modalTitle" class="text-lg font-bold text-white">Aggiungi Nuovo Gioco</h3>
+                    <button type="button" id="modalFavBtn" onclick="toggleModalFav()" class="text-2xl text-slate-600 hover:text-amber-400 transition" title="Contrassegna come Preferito">★</button>
+                </div>
                 <button type="button" onclick="closeModal('addGameModal')" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
             </div>
 
             <form id="gameForm" onsubmit="saveGame(event)" class="space-y-4">
                 <input type="hidden" id="editGameId">
+                <input type="hidden" id="gameIsFavorite" value="false">
 
                 <div class="bg-slate-900 p-3 rounded-xl border border-slate-700 space-y-2">
                     <label class="block text-xs font-semibold text-brand-500 uppercase tracking-wider">Importazione Automatica da BoardGameGeek</label>
                     <div class="flex gap-2">
                         <input type="number" id="bggIdInput" placeholder="BGG Game ID (es: 362986)" class="flex-1 bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg p-2 focus:border-brand-500 focus:outline-none">
-                        <button type="button" onclick="fetchBGGData()" class="bg-brand-600 hover:bg-brand-500 text-white px-3 py-2 rounded-lg text-xs font-bold transition shrink-0 flex items-center gap-1">
+                        <button type="button" id="bggImportBtn" onclick="fetchBGGData()" class="bg-brand-600 hover:bg-brand-500 text-white px-3 py-2 rounded-lg text-xs font-bold transition shrink-0 flex items-center gap-1">
                             <span>Importa</span>
                         </button>
                     </div>
@@ -227,7 +240,7 @@
                         <label class="block text-xs font-medium text-slate-300 mb-1">Proprietario *</label>
                         <select id="gameOwnership" onchange="toggleOwnerNameInput()" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
                             <option value="owned">Mio (Posseduto)</option>
-                            <option value="friend">Di un Amico</option>
+                            <option value="friend">Amico</option>
                         </select>
                     </div>
                     <div id="ownerNameContainer" class="hidden">
@@ -236,7 +249,7 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-3 gap-3">
                     <div>
                         <label class="block text-xs font-medium text-slate-300 mb-1">Giocatori Min *</label>
                         <input type="number" id="gameMinPlayers" required min="1" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
@@ -244,6 +257,10 @@
                     <div>
                         <label class="block text-xs font-medium text-slate-300 mb-1">Giocatori Max *</label>
                         <input type="number" id="gameMaxPlayers" required min="1" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Ideale in (Best with)</label>
+                        <input type="text" id="gameBestWith" placeholder="Es: 4, 3-4" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
                     </div>
                 </div>
 
@@ -265,11 +282,11 @@
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-medium text-slate-300 mb-1">Temi (Category)</label>
-                        <input type="text" id="gameThemes" placeholder="Sci-Fi, Economico..." class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                        <input type="text" id="gameThemes" list="existingThemesList" placeholder="Sci-Fi, Economico..." class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-slate-300 mb-1">Serie (Family)</label>
-                        <input type="text" id="gameSeries" placeholder="Star Wars, Marvel..." class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
+                        <input type="text" id="gameSeries" list="existingSeriesList" placeholder="Star Wars, Marvel..." class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm focus:border-brand-500 focus:outline-none">
                     </div>
                 </div>
 
@@ -285,7 +302,7 @@
 
                 <div class="flex justify-end gap-2 pt-2">
                     <button type="button" onclick="closeModal('addGameModal')" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-4 py-2 rounded-lg text-sm font-semibold">Annulla</button>
-                    <button type="submit" class="bg-brand-600 hover:bg-brand-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow">Salva in Firestore</button>
+                    <button type="submit" class="bg-brand-600 hover:bg-brand-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow">Salva</button>
                 </div>
             </form>
         </div>
@@ -358,7 +375,7 @@
                     <select id="mobileFilterOwnership" onchange="syncMobileFilters(); applyFilters();" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-sm">
                         <option value="all">Tutti i giochi</option>
                         <option value="owned">Solo miei</option>
-                        <option value="friend">Di un amico</option>
+                        <option value="friend">Amico</option>
                     </select>
                 </div>
 
@@ -395,6 +412,7 @@
 
     <script>
         let games = [];
+        let lastHighlightedId = null;
         let presets = JSON.parse(localStorage.getItem('bg_shelf_presets')) || [
             { name: 'Serata 4 Giocatori', filters: { players: 4, time: 240, weight: 'all', ownership: 'all' } },
             { name: 'Fillers Veloci (< 60m)', filters: { players: '', time: 60, weight: 'light', ownership: 'all' } }
@@ -408,7 +426,7 @@
 
             if (state === 'connected') {
                 badge.className = 'flex items-center gap-1.5 bg-emerald-950/80 text-emerald-300 border border-emerald-700/80 px-2.5 py-1 rounded-full text-xs font-medium';
-                badge.title = 'Collegamento Firebase Firestore attivo (test-6a1c6)';
+                badge.title = 'Collegamento Firebase Firestore attivo (game-shelf)';
                 dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
                 text.innerText = 'Firebase Attivo';
             } else if (state === 'error') {
@@ -426,9 +444,7 @@
 
         function updateHeaderTotalCount() {
             const el = document.getElementById('headerTotalCount');
-            if (el) {
-                el.innerText = `(${games.length})`;
-            }
+            if (el) el.innerText = `(${games.length})`;
         }
 
         window.addEventListener('load', () => {
@@ -457,6 +473,10 @@
                 populateFilterOptions();
                 renderPresets();
                 applyFilters();
+
+                if (lastHighlightedId) {
+                    highlightAndScrollToGame(lastHighlightedId);
+                }
             }, (err) => {
                 console.error("Errore lettura Firestore:", err);
                 setDbStatus('error');
@@ -476,9 +496,42 @@
         function openAddGameModal() {
             document.getElementById('gameForm').reset();
             document.getElementById('editGameId').value = '';
+            document.getElementById('gameIsFavorite').value = 'false';
+            updateModalFavBtnUI(false);
             document.getElementById('modalTitle').innerText = 'Aggiungi Nuovo Gioco';
             toggleOwnerNameInput();
             openModal('addGameModal');
+        }
+
+        function toggleModalFav() {
+            const current = document.getElementById('gameIsFavorite').value === 'true';
+            const newVal = !current;
+            document.getElementById('gameIsFavorite').value = newVal ? 'true' : 'false';
+            updateModalFavBtnUI(newVal);
+        }
+
+        function updateModalFavBtnUI(isFav) {
+            const btn = document.getElementById('modalFavBtn');
+            if (!btn) return;
+            if (isFav) {
+                btn.className = 'text-2xl text-amber-400 hover:text-amber-300 transition';
+            } else {
+                btn.className = 'text-2xl text-slate-600 hover:text-amber-400 transition';
+            }
+        }
+
+        async function toggleFavoriteInCard(id, e) {
+            if (e) e.stopPropagation();
+            const g = games.find(x => x.id === id);
+            if (!g) return;
+
+            const newFav = !(g.isFavorite || false);
+            const { doc, updateDoc } = window.firestoreMethods;
+            try {
+                await updateDoc(doc(window.db, "games", id), { isFavorite: newFav });
+            } catch (err) {
+                console.error("Errore modifica preferito:", err);
+            }
         }
 
         function toggleOwnerNameInput() {
@@ -497,40 +550,78 @@
             const bggId = document.getElementById('bggIdInput').value.trim();
             if (!bggId) return alert("Inserisci un ID BGG valido.");
 
+            const btn = document.getElementById('bggImportBtn');
+            const originalText = btn ? btn.innerText : 'Importa';
+            if (btn) btn.innerText = 'Caricamento...';
+
+            const bggUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${bggId}&stats=1`;
+            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(bggUrl)}`;
+
             try {
-                const proxyUrl = 'https://api.allorigins.win/raw?url=';
-                const bggUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${bggId}&stats=1`;
-                const res = await fetch(proxyUrl + encodeURIComponent(bggUrl));
-                const text = await res.text();
+                const res = await fetch(proxyUrl);
+                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+
+                const data = await res.json();
+                if (!data.contents) throw new Error("Risposta proxy vuota");
 
                 const parser = new DOMParser();
-                const xml = parser.parseFromString(text, 'text/xml');
+                const xml = parser.parseFromString(data.contents, 'text/xml');
                 const item = xml.querySelector('item');
 
-                if (!item) return alert("Gioco non trovato su BGG.");
+                if (!item) {
+                    if (btn) btn.innerText = originalText;
+                    return alert("Gioco non trovato su BGG. Verifica l'ID inserito.");
+                }
 
-                document.getElementById('gameTitle').value = item.querySelector('name[type="primary"]')?.getAttribute('value') || '';
+                const nameEl = item.querySelector('name[type="primary"]') || item.querySelector('name');
+                if (nameEl) document.getElementById('gameTitle').value = nameEl.getAttribute('value') || '';
+
                 document.getElementById('gameMinPlayers').value = item.querySelector('minplayers')?.getAttribute('value') || 1;
                 document.getElementById('gameMaxPlayers').value = item.querySelector('maxplayers')?.getAttribute('value') || 4;
                 document.getElementById('gamePlayTime').value = item.querySelector('playingtime')?.getAttribute('value') || 60;
-                document.getElementById('gameCoverUrl').value = item.querySelector('image')?.textContent || item.querySelector('thumbnail')?.textContent || '';
 
-                const weight = xml.querySelector('averageweight')?.getAttribute('value');
+                const bestPoll = item.querySelector('poll[name="suggested_numplayers"]');
+                if (bestPoll) {
+                    let bestNum = "";
+                    let maxVotes = -1;
+                    const results = bestPoll.querySelectorAll('results');
+                    results.forEach(r => {
+                        const numPlayers = r.getAttribute('numplayers');
+                        const bestVoteEl = r.querySelector('result[value="Best"]');
+                        if (bestVoteEl) {
+                            const votes = parseInt(bestVoteEl.getAttribute('numvotes') || '0');
+                            if (votes > maxVotes && votes > 0) {
+                                maxVotes = votes;
+                                bestNum = numPlayers;
+                            }
+                        }
+                    });
+                    if (bestNum) {
+                        document.getElementById('gameBestWith').value = bestNum;
+                    }
+                }
+
+                const imgVal = item.querySelector('image')?.textContent || item.querySelector('thumbnail')?.textContent || '';
+                document.getElementById('gameCoverUrl').value = imgVal.trim();
+
+                const weight = item.querySelector('averageweight')?.getAttribute('value');
                 if (weight) document.getElementById('gameWeight').value = parseFloat(weight).toFixed(1);
 
-                const rating = xml.querySelector('average')?.getAttribute('value');
+                const rating = item.querySelector('average')?.getAttribute('value');
                 if (rating) document.getElementById('gameBggRating').value = parseFloat(rating).toFixed(1);
 
-                const categories = Array.from(xml.querySelectorAll('link[type="boardgamecategory"]')).map(el => el.getAttribute('value'));
-                const families = Array.from(xml.querySelectorAll('link[type="boardgamefamily"]')).map(el => el.getAttribute('value'));
+                const categories = Array.from(item.querySelectorAll('link[type="boardgamecategory"]')).map(el => el.getAttribute('value'));
+                const families = Array.from(item.querySelectorAll('link[type="boardgamefamily"]')).map(el => el.getAttribute('value'));
 
                 document.getElementById('gameThemes').value = categories.join(', ');
                 document.getElementById('gameSeries').value = families.slice(0, 3).join(', ');
 
-                alert("Dati importati con successo da BoardGameGeek.");
+                alert(`Dati di "${document.getElementById('gameTitle').value}" importati con successo da BGG!`);
             } catch (err) {
-                console.error(err);
-                alert("Errore durante la connessione a BGG. Controlla l'ID o riprova.");
+                console.error("Errore fetch BGG:", err);
+                alert("Impossibile connettersi a BGG tramite il proxy. Puoi inserire i dati manualmente.");
+            } finally {
+                if (btn) btn.innerText = originalText;
             }
         }
 
@@ -562,10 +653,27 @@
                 });
                 seriesSelect.value = currentVal;
             }
+
+            const dlThemes = document.getElementById('existingThemesList');
+            if (dlThemes) {
+                dlThemes.innerHTML = '';
+                Array.from(themeSet).sort().forEach(t => {
+                    dlThemes.innerHTML += `<option value="${t}"></option>`;
+                });
+            }
+
+            const dlSeries = document.getElementById('existingSeriesList');
+            if (dlSeries) {
+                dlSeries.innerHTML = '';
+                Array.from(seriesSet).sort().forEach(s => {
+                    dlSeries.innerHTML += `<option value="${s}"></option>`;
+                });
+            }
         }
 
         function applyFilters() {
             const search = document.getElementById('filterSearch').value.toLowerCase();
+            const favFilter = document.getElementById('filterFavorite') ? document.getElementById('filterFavorite').value : 'all';
             const ownership = document.getElementById('filterOwnership').value;
             const players = parseInt(document.getElementById('filterPlayers').value) || null;
             const maxTime = parseInt(document.getElementById('filterTime').value);
@@ -576,6 +684,7 @@
 
             let filtered = games.filter(g => {
                 if (search && !g.title.toLowerCase().includes(search)) return false;
+                if (favFilter === 'fav' && !(g.isFavorite || false)) return false;
                 if (ownership !== 'all' && g.ownership !== ownership) return false;
                 if (players && (players < g.minPlayers || players > g.maxPlayers)) return false;
                 if (maxTime < 240 && g.playTimeMinutes > maxTime) return false;
@@ -625,27 +734,39 @@
 
             items.forEach(g => {
                 const avgPersonal = getAvgRating(g);
+                const isFav = g.isFavorite || false;
                 const ownerBadge = g.ownership === 'friend'
-                    ? `<span class="bg-amber-900/60 text-amber-300 border border-amber-700 text-[10px] px-2 py-0.5 rounded-full">Di ${g.ownerName || 'Amico'}</span>`
+                    ? `<span class="bg-amber-900/60 text-amber-300 border border-amber-700 text-[10px] px-2 py-0.5 rounded-full">Amico${g.ownerName ? ': ' + g.ownerName : ''}</span>`
                     : `<span class="bg-brand-900/60 text-brand-300 border border-brand-700 text-[10px] px-2 py-0.5 rounded-full">Mio</span>`;
 
+                const bestWithBadge = g.bestWith ? `<span class="text-brand-400 font-semibold">(ideale: ${g.bestWith})</span>` : '';
+
                 grid.innerHTML += `
-                    <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-lg flex flex-col hover:border-slate-600 transition">
+                    <div id="gameCard-${g.id}" onclick="editGame('${g.id}')" class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-lg flex flex-col hover:border-slate-500 cursor-pointer transition">
                         <div class="h-44 bg-slate-900 relative overflow-hidden flex items-center justify-center">
                             ${g.coverUrl
                                 ? `<img src="${g.coverUrl}" class="w-full h-full object-cover">`
                                 : `<span class="text-slate-600 font-bold">Nessuna Immagine</span>`}
+
                             <div class="absolute top-2 left-2 flex gap-1">${ownerBadge}</div>
+
+                            <button type="button" onclick="toggleFavoriteInCard('${g.id}', event)" class="absolute top-2 right-2 bg-slate-900/80 hover:bg-slate-900 text-xl px-2 py-0.5 rounded-full shadow border border-slate-700 transition" title="Segna come Preferito">
+                                <span class="${isFav ? 'text-amber-400' : 'text-slate-500'}">★</span>
+                            </button>
                         </div>
 
                         <div class="p-4 flex-1 flex flex-col justify-between">
                             <div>
-                                <h3 class="font-bold text-white text-base leading-tight mb-1">${g.title}</h3>
+                                <h3 class="font-bold text-white text-base leading-tight mb-1 flex items-center justify-between">
+                                    <span>${g.title}</span>
+                                </h3>
+
                                 <div class="flex flex-wrap gap-1 mb-3">
                                     ${(g.themes || []).map(t => `<span class="bg-slate-700 text-slate-300 text-[10px] px-1.5 py-0.5 rounded">${t}</span>`).join('')}
                                 </div>
+
                                 <div class="grid grid-cols-2 gap-2 text-xs text-slate-300 mb-3 bg-slate-900/50 p-2 rounded-lg border border-slate-700/50">
-                                    <div>Giocatori: <strong class="text-white">${g.minPlayers}-${g.maxPlayers}</strong></div>
+                                    <div>Giocatori: <strong class="text-white">${g.minPlayers}-${g.maxPlayers}</strong> ${bestWithBadge}</div>
                                     <div>Durata: <strong class="text-white">${g.playTimeMinutes}m</strong></div>
                                     <div>Peso BGG: <strong class="text-white">${g.weight || '-'}</strong></div>
                                     <div>Voto BGG: <strong class="text-white">${g.bggRating || '-'}</strong></div>
@@ -658,7 +779,7 @@
                                     <span>Media Gruppo: <strong class="text-brand-500 font-bold">${avgPersonal > 0 ? avgPersonal + '/10' : '-'}</strong></span>
                                 </div>
 
-                                <div class="flex gap-2">
+                                <div class="flex gap-2" onclick="event.stopPropagation()">
                                     <button type="button" onclick="openLogPlayModal('${g.id}')" class="flex-1 bg-brand-600/20 hover:bg-brand-600/40 text-brand-400 border border-brand-700/50 text-xs py-1.5 rounded-lg font-semibold transition">
                                         + Partita
                                     </button>
@@ -672,6 +793,17 @@
             });
         }
 
+        function highlightAndScrollToGame(id) {
+            const card = document.getElementById(`gameCard-${id}`);
+            if (card) {
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                card.classList.add('ring-2', 'ring-brand-500', 'border-brand-500');
+                setTimeout(() => {
+                    card.classList.remove('ring-2', 'ring-brand-500', 'border-brand-500');
+                }, 3000);
+            }
+        }
+
         async function saveGame(e) {
             e.preventDefault();
             if (!window.db || !window.firestoreMethods) {
@@ -680,10 +812,12 @@
 
             const editId = document.getElementById('editGameId').value;
             const title = document.getElementById('gameTitle').value;
+            const isFavorite = document.getElementById('gameIsFavorite').value === 'true';
             const ownership = document.getElementById('gameOwnership').value;
             const ownerName = document.getElementById('gameOwnerName').value;
             const minPlayers = parseInt(document.getElementById('gameMinPlayers').value);
             const maxPlayers = parseInt(document.getElementById('gameMaxPlayers').value);
+            const bestWith = document.getElementById('gameBestWith').value.trim();
             const playTimeMinutes = parseInt(document.getElementById('gamePlayTime').value) || 60;
             const weight = parseFloat(document.getElementById('gameWeight').value) || 2.5;
             const bggRating = parseFloat(document.getElementById('gameBggRating').value) || 7.0;
@@ -694,19 +828,25 @@
 
             const { collection, addDoc, doc, updateDoc } = window.firestoreMethods;
             const payload = {
-                title, ownership, ownerName, minPlayers, maxPlayers,
+                title, isFavorite, ownership, ownerName, minPlayers, maxPlayers, bestWith,
                 playTimeMinutes, weight, bggRating, themes, series, coverUrl, notes
             };
 
             try {
+                let targetId = editId;
                 if (editId) {
                     await updateDoc(doc(window.db, "games", editId), payload);
                 } else {
                     payload.playLogs = [];
-                    await addDoc(collection(window.db, "games"), payload);
+                    const docRef = await addDoc(collection(window.db, "games"), payload);
+                    targetId = docRef.id;
                 }
+
+                lastHighlightedId = targetId;
+
                 closeModal('addGameModal');
                 document.getElementById('gameForm').reset();
+                highlightAndScrollToGame(targetId);
             } catch (err) {
                 console.error("Errore salvataggio Firestore:", err);
                 setDbStatus('error');
@@ -718,14 +858,19 @@
             const g = games.find(x => x.id === id);
             if (!g) return;
 
-            document.getElementById('modalTitle').innerText = 'Modifica Gioco';
+            document.getElementById('modalTitle').innerText = 'Modifica Scheda Gioco';
             document.getElementById('editGameId').value = g.id;
+            const isFav = g.isFavorite || false;
+            document.getElementById('gameIsFavorite').value = isFav ? 'true' : 'false';
+            updateModalFavBtnUI(isFav);
+
             document.getElementById('gameTitle').value = g.title;
             document.getElementById('gameOwnership').value = g.ownership || 'owned';
             document.getElementById('gameOwnerName').value = g.ownerName || '';
             toggleOwnerNameInput();
             document.getElementById('gameMinPlayers').value = g.minPlayers;
             document.getElementById('gameMaxPlayers').value = g.maxPlayers;
+            document.getElementById('gameBestWith').value = g.bestWith || '';
             document.getElementById('gamePlayTime').value = g.playTimeMinutes;
             document.getElementById('gameWeight').value = g.weight;
             document.getElementById('gameBggRating').value = g.bggRating;
@@ -763,8 +908,10 @@
                 const { doc, updateDoc } = window.firestoreMethods;
                 try {
                     await updateDoc(doc(window.db, "games", id), { playLogs: logs });
+                    lastHighlightedId = id;
                     closeModal('logPlayModal');
                     document.getElementById('logPlayForm').reset();
+                    highlightAndScrollToGame(id);
                 } catch (err) {
                     console.error("Errore salvataggio partita:", err);
                     setDbStatus('error');
@@ -775,12 +922,14 @@
 
         function pickRandomGame() {
             const search = document.getElementById('filterSearch').value.toLowerCase();
+            const favFilter = document.getElementById('filterFavorite') ? document.getElementById('filterFavorite').value : 'all';
             const ownership = document.getElementById('filterOwnership').value;
             const players = parseInt(document.getElementById('filterPlayers').value) || null;
             const maxTime = parseInt(document.getElementById('filterTime').value);
 
             let eligible = games.filter(g => {
                 if (search && !g.title.toLowerCase().includes(search)) return false;
+                if (favFilter === 'fav' && !(g.isFavorite || false)) return false;
                 if (ownership !== 'all' && g.ownership !== ownership) return false;
                 if (players && (players < g.minPlayers || players > g.maxPlayers)) return false;
                 if (maxTime < 240 && g.playTimeMinutes > maxTime) return false;
@@ -796,7 +945,7 @@
                 <div class="font-bold text-xl text-white mb-2">${picked.title}</div>
                 ${picked.coverUrl ? `<img src="${picked.coverUrl}" class="h-40 mx-auto rounded-lg shadow-md mb-2">` : ''}
                 <div class="text-xs text-slate-300 space-y-1">
-                    <p>Giocatori: ${picked.minPlayers} - ${picked.maxPlayers}</p>
+                    <p>Giocatori: ${picked.minPlayers} - ${picked.maxPlayers} ${picked.bestWith ? '(ideale: ' + picked.bestWith + ')' : ''}</p>
                     <p>Durata: ${picked.playTimeMinutes} min | Peso: ${picked.weight}</p>
                 </div>
             `;
@@ -873,6 +1022,7 @@
 
         function resetFilters() {
             document.getElementById('filterSearch').value = '';
+            if (document.getElementById('filterFavorite')) document.getElementById('filterFavorite').value = 'all';
             document.getElementById('filterOwnership').value = 'all';
             document.getElementById('filterPlayers').value = '';
             document.getElementById('filterTime').value = 240;
