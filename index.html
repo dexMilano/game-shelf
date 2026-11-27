@@ -21,11 +21,21 @@
             appId: "1:70976640675:web:1eb7b1d2ad0ddc147e9116"
         };
 
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app, "game-shelf");
+        // ID del database Firestore. "(default)" = database predefinito del progetto.
+        // Se usi un database con nome (es. "game-shelf") deve esistere in Firebase Console
+        // > Firestore Database, e le sue Rules sono separate da quelle del (default).
+        const FIRESTORE_DB_ID = "game-shelf";
 
-        window.db = db;
-        window.firestoreMethods = { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, onSnapshot };
+        try {
+            const app = initializeApp(firebaseConfig);
+            const db = FIRESTORE_DB_ID === "(default)" ? getFirestore(app) : getFirestore(app, FIRESTORE_DB_ID);
+            window.db = db;
+            window.firestoreDbId = FIRESTORE_DB_ID;
+            window.firestoreMethods = { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, onSnapshot };
+        } catch (err) {
+            console.error("Errore inizializzazione Firebase:", err);
+            window.firebaseInitError = err;
+        }
     </script>
 
     <script>
@@ -75,6 +85,15 @@
             </div>
         </div>
     </header>
+
+    <!-- Banner diagnostica Firebase -->
+    <div id="dbErrorBanner" class="hidden bg-red-950/90 border-b border-red-800 text-red-200 text-xs px-4 py-2">
+        <div class="max-w-7xl mx-auto">
+            <strong id="dbErrorTitle"></strong>
+            <span id="dbErrorHint"></span>
+            <code id="dbErrorCode" class="block text-red-300/80 mt-1 break-all"></code>
+        </div>
+    </div>
 
     <!-- App Main Container -->
     <div class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full flex flex-col md:flex-row gap-6">
@@ -418,20 +437,49 @@
             { name: 'Fillers Veloci (< 60m)', filters: { players: '', time: 60, weight: 'light', ownership: 'all' } }
         ];
 
-        function setDbStatus(state) {
+        function describeFirebaseError(err) {
+            const code = (err && err.code) || '';
+            const dbId = window.firestoreDbId || '(default)';
+            const map = {
+                'permission-denied': `Le Security Rules del database "${dbId}" rifiutano la lettura/scrittura. Firebase Console > Firestore Database > seleziona il database "${dbId}" > Rules. Se erano in "test mode" potrebbero essere scadute (30 giorni). Controlla anche che le rules siano pubblicate proprio su "${dbId}" e non solo sul (default).`,
+                'not-found': `Il database "${dbId}" non esiste nel progetto ${'test-6a1c6'}. Crealo in Firebase Console > Firestore Database > menu database > Aggiungi database, con ID esattamente "${dbId}" (oppure imposta FIRESTORE_DB_ID = "(default)" nel codice).`,
+                'unavailable': `Impossibile raggiungere il backend Firestore. Possibili cause: database "${dbId}" inesistente, API key con restrizioni HTTP referrer che non includono questo dominio (Google Cloud Console > API e servizi > Credenziali), Cloud Firestore API disabilitata, ad-blocker/rete che blocca firestore.googleapis.com.`,
+                'unauthenticated': `Richiesta non autenticata: le rules richiedono login (request.auth != null) ma l'app non effettua l'accesso.`,
+                'failed-precondition': `Precondizione fallita (es. indice mancante o database in modalità/edition non compatibile).`,
+                'resource-exhausted': `Quota Firestore esaurita (piano Spark).`
+            };
+            return map[code] || 'Errore Firestore non classificato: vedi il codice qui sotto e la console del browser (F12).';
+        }
+
+        function showDbError(title, err) {
+            const banner = document.getElementById('dbErrorBanner');
+            if (!banner) return;
+            document.getElementById('dbErrorTitle').innerText = title + ' ';
+            document.getElementById('dbErrorHint').innerText = describeFirebaseError(err);
+            document.getElementById('dbErrorCode').innerText = err ? `${err.code || 'no-code'}: ${err.message || err}` : '';
+            banner.classList.remove('hidden');
+        }
+
+        function hideDbError() {
+            const banner = document.getElementById('dbErrorBanner');
+            if (banner) banner.classList.add('hidden');
+        }
+
+        function setDbStatus(state, detail) {
             const badge = document.getElementById('dbStatusBadge');
             const dot = document.getElementById('dbStatusDot');
             const text = document.getElementById('dbStatusText');
             if (!badge || !dot || !text) return;
+            const dbId = window.firestoreDbId || '(default)';
 
             if (state === 'connected') {
                 badge.className = 'flex items-center gap-1.5 bg-emerald-950/80 text-emerald-300 border border-emerald-700/80 px-2.5 py-1 rounded-full text-xs font-medium';
-                badge.title = 'Collegamento Firebase Firestore attivo (game-shelf)';
+                badge.title = `Collegamento Firebase Firestore attivo (${dbId})`;
                 dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
                 text.innerText = 'Firebase Attivo';
             } else if (state === 'error') {
                 badge.className = 'flex items-center gap-1.5 bg-red-950/80 text-red-300 border border-red-700/80 px-2.5 py-1 rounded-full text-xs font-medium';
-                badge.title = 'Errore collegamento Firebase Firestore';
+                badge.title = detail || 'Errore collegamento Firebase Firestore';
                 dot.className = 'w-2.5 h-2.5 rounded-full bg-red-400';
                 text.innerText = 'Firebase Offline';
             } else {
@@ -453,18 +501,53 @@
             renderPresets();
             applyFilters();
 
+            let waited = 0;
             const checkFirebase = setInterval(() => {
+                if (window.firebaseInitError) {
+                    clearInterval(checkFirebase);
+                    setDbStatus('error', 'Inizializzazione Firebase fallita');
+                    showDbError('Inizializzazione Firebase fallita.', window.firebaseInitError);
+                    return;
+                }
                 if (window.db && window.firestoreMethods) {
                     clearInterval(checkFirebase);
                     initFirestoreSync();
+                    return;
+                }
+                waited += 100;
+                if (waited >= 10000) {
+                    clearInterval(checkFirebase);
+                    setDbStatus('error', 'SDK Firebase non caricato');
+                    showDbError('Gli SDK Firebase non si sono caricati.', { code: 'sdk-load', message: 'Controlla la connessione, ad-blocker o blocco di www.gstatic.com.' });
                 }
             }, 100);
         });
 
         function initFirestoreSync() {
             const { collection, onSnapshot } = window.firestoreMethods;
-            onSnapshot(collection(window.db, "games"), (snapshot) => {
-                setDbStatus('connected');
+            let gotServerData = false;
+
+            // Se dopo 12s non è arrivato nulla dal server, segnala il problema
+            const watchdog = setTimeout(() => {
+                if (!gotServerData) {
+                    setDbStatus('error', 'Nessuna risposta dal server Firestore');
+                    showDbError('Nessuna risposta da Firestore dopo 12s.', { code: 'unavailable', message: 'Il client non riesce a raggiungere il database.' });
+                }
+            }, 12000);
+
+            console.info(`[Firestore] progetto test-6a1c6, database "${window.firestoreDbId}", collezione "games"`);
+
+            onSnapshot(collection(window.db, "games"), { includeMetadataChanges: true }, (snapshot) => {
+                // fromCache = true significa che i dati NON arrivano dal server (offline o DB irraggiungibile)
+                if (snapshot.metadata.fromCache) {
+                    setDbStatus('connecting');
+                } else {
+                    gotServerData = true;
+                    clearTimeout(watchdog);
+                    setDbStatus('connected');
+                    hideDbError();
+                }
+
                 games = [];
                 snapshot.forEach(doc => {
                     games.push({ id: doc.id, ...doc.data() });
@@ -478,8 +561,10 @@
                     highlightAndScrollToGame(lastHighlightedId);
                 }
             }, (err) => {
-                console.error("Errore lettura Firestore:", err);
-                setDbStatus('error');
+                clearTimeout(watchdog);
+                console.error("Errore lettura Firestore:", err.code, err.message, err);
+                setDbStatus('error', `${err.code}: ${err.message}`);
+                showDbError('Errore lettura Firestore.', err);
             });
         }
 
@@ -850,7 +935,8 @@
             } catch (err) {
                 console.error("Errore salvataggio Firestore:", err);
                 setDbStatus('error');
-                alert("Impossibile salvare su Firestore. Controlla le regole del database.");
+                alert(`Impossibile salvare su Firestore.\n${err.code || ''} ${err.message || ''}`);
+                showDbError('Errore salvataggio.', err);
             }
         }
 
@@ -915,7 +1001,8 @@
                 } catch (err) {
                     console.error("Errore salvataggio partita:", err);
                     setDbStatus('error');
-                    alert("Errore durante il salvataggio della partita su Firestore.");
+                    alert(`Errore durante il salvataggio della partita.\n${err.code || ''} ${err.message || ''}`);
+                    showDbError('Errore salvataggio partita.', err);
                 }
             }
         }
