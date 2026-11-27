@@ -67,6 +67,9 @@
                     <span id="dbStatusText" class="hidden sm:inline">Firebase...</span>
                 </div>
 
+                <button type="button" onclick="openCsvModal()" title="Esporta / Importa CSV" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
+                    <span>CSV</span>
+                </button>
                 <button type="button" onclick="openModal('presetModal')" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
                     <span>Preset</span>
                 </button>
@@ -412,6 +415,40 @@
                 <div class="pt-2">
                     <button type="button" onclick="closeModal('mobileFilterModal')" class="w-full bg-brand-600 hover:bg-brand-500 text-white py-2 rounded-lg text-sm font-bold">Applica Filtri</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale Esporta / Importa CSV -->
+    <div id="csvModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-white">Esporta / Importa CSV</h3>
+                <button type="button" onclick="closeModal('csvModal')" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
+            </div>
+
+            <div class="space-y-5">
+                <section class="bg-slate-900 p-4 rounded-xl border border-slate-700 space-y-2">
+                    <h4 class="text-xs font-semibold text-brand-500 uppercase tracking-wider">Esporta</h4>
+                    <p class="text-xs text-slate-400">Scarica tutti i giochi (<strong id="csvExportCount" class="text-slate-200">0</strong>), indipendentemente dai filtri attivi. Le immagini sono esportate come link.</p>
+                    <button type="button" onclick="exportGamesCsv()" class="w-full bg-brand-600 hover:bg-brand-500 text-white py-2 rounded-lg text-sm font-bold shadow">Scarica CSV</button>
+                </section>
+
+                <section class="bg-slate-900 p-4 rounded-xl border border-slate-700 space-y-3">
+                    <h4 class="text-xs font-semibold text-brand-500 uppercase tracking-wider">Importa</h4>
+                    <p class="text-xs text-slate-400">Seleziona un file CSV (separatore <code>;</code> o <code>,</code>). Serve almeno la colonna <code>titolo</code>. Il modo più semplice è partire da un export o dal <button type="button" onclick="downloadCsvTemplate()" class="text-brand-500 hover:underline">modello vuoto</button>.</p>
+                    <input type="file" id="csvFileInput" accept=".csv,text/csv,text/plain" onchange="handleCsvFile(this)" class="block w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-slate-700 file:text-slate-200 file:font-semibold hover:file:bg-slate-600">
+
+                    <div id="csvPreview" class="hidden space-y-3">
+                        <div id="csvPreviewText" class="text-xs text-slate-200 bg-slate-800 border border-slate-700 rounded-lg p-3 space-y-1"></div>
+                        <div id="csvDupOptions" class="hidden space-y-1 text-xs text-slate-300">
+                            <p class="font-semibold text-slate-200">Giochi già presenti (stesso titolo):</p>
+                            <label class="flex items-center gap-2"><input type="radio" name="csvDupMode" value="skip" checked class="accent-brand-500"> Salta (non toccare quelli esistenti)</label>
+                            <label class="flex items-center gap-2"><input type="radio" name="csvDupMode" value="update" class="accent-brand-500"> Aggiorna con i dati del file</label>
+                        </div>
+                        <button type="button" id="csvImportBtn" onclick="runCsvImport()" class="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2 rounded-lg text-sm font-bold shadow">Importa</button>
+                    </div>
+                </section>
             </div>
         </div>
     </div>
@@ -1261,6 +1298,333 @@
             updateTimeVal();
             applyFilters();
         }
+
+        // ==== CSV START ====
+        const CSV_COLUMNS = ['titolo', 'proprieta', 'nome_amico', 'giocatori_min', 'giocatori_max', 'ideale', 'durata_min', 'complessita', 'rating_bgg', 'temi', 'serie', 'url_immagine', 'note', 'preferito', 'partite'];
+
+        const CSV_ALIASES = {
+            titolo: ['titolo', 'title', 'nome', 'name'],
+            proprieta: ['proprieta', 'proprietario', 'ownership', 'owner'],
+            nome_amico: ['nome_amico', 'ownername', 'owner_name', 'amico'],
+            giocatori_min: ['giocatori_min', 'minplayers', 'min_players', 'min'],
+            giocatori_max: ['giocatori_max', 'maxplayers', 'max_players', 'max'],
+            ideale: ['ideale', 'bestwith', 'best_with', 'best'],
+            durata_min: ['durata_min', 'durata', 'playtimeminutes', 'playtime', 'minuti'],
+            complessita: ['complessita', 'weight', 'peso'],
+            rating_bgg: ['rating_bgg', 'bggrating', 'voto_bgg', 'rating'],
+            temi: ['temi', 'themes', 'categorie', 'categories'],
+            serie: ['serie', 'series', 'famiglie'],
+            url_immagine: ['url_immagine', 'coverurl', 'cover', 'immagine', 'image'],
+            note: ['note', 'notes'],
+            preferito: ['preferito', 'isfavorite', 'favorite'],
+            partite: ['partite', 'playlogs', 'play_logs']
+        };
+
+        function normHeader(h) {
+            return String(h || '').replace(/^﻿/, '').trim().toLowerCase()
+                .normalize('NFD').replace(/[̀-ͯ]/g, '')
+                .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+        }
+
+        // Parser CSV: gestisce virgolette, separatori dentro i campi e a-capo dentro i campi
+        function parseCSV(text) {
+            text = String(text || '').replace(/^﻿/, '');
+            const firstLine = text.split(/\r?\n/)[0] || '';
+            const delim = [';', ',', '\t']
+                .map(d => [d, firstLine.split(d).length])
+                .sort((a, b) => b[1] - a[1])[0][0];
+
+            const rows = [];
+            let row = [], field = '', inQuotes = false;
+
+            for (let i = 0; i < text.length; i++) {
+                const c = text[i];
+                if (inQuotes) {
+                    if (c === '"') {
+                        if (text[i + 1] === '"') { field += '"'; i++; }
+                        else inQuotes = false;
+                    } else field += c;
+                } else if (c === '"') {
+                    inQuotes = true;
+                } else if (c === delim) {
+                    row.push(field); field = '';
+                } else if (c === '\n' || c === '\r') {
+                    if (c === '\r' && text[i + 1] === '\n') i++;
+                    row.push(field); field = '';
+                    rows.push(row); row = [];
+                } else field += c;
+            }
+            if (field !== '' || row.length) { row.push(field); rows.push(row); }
+
+            return rows.filter(r => r.some(cell => String(cell).trim() !== ''));
+        }
+
+        function csvCell(value, guardFormula = true) {
+            let str = value === null || value === undefined ? '' : String(value);
+            // Evita che Excel interpreti il testo come formula
+            if (guardFormula && /^[=+\-@]/.test(str)) str = "'" + str;
+            if (/[";\r\n]/.test(str)) str = '"' + str.replace(/"/g, '""') + '"';
+            return str;
+        }
+
+        function csvNum(n) {
+            return (n === null || n === undefined || n === '' || Number.isNaN(n)) ? '' : String(n).replace('.', ',');
+        }
+
+        function gamesToCsv(list) {
+            const lines = [CSV_COLUMNS.join(';')];
+            list.forEach(g => {
+                const logs = (g.playLogs || []).map(l => `${l.date || ''}:${l.playerCount ?? ''}:${l.rating ?? ''}`).join(';');
+                lines.push([
+                    csvCell(g.title),
+                    csvCell(g.ownership === 'friend' ? 'amico' : 'mio'),
+                    csvCell(g.ownerName || ''),
+                    csvCell(g.minPlayers ?? '', false),
+                    csvCell(g.maxPlayers ?? '', false),
+                    csvCell(g.bestWith || ''),
+                    csvCell(g.playTimeMinutes ?? '', false),
+                    csvCell(csvNum(g.weight), false),
+                    csvCell(csvNum(g.bggRating), false),
+                    csvCell((g.themes || []).join(' | ')),
+                    csvCell((g.series || []).join(' | ')),
+                    csvCell(g.coverUrl || ''),
+                    csvCell(g.notes || ''),
+                    csvCell(g.isFavorite ? 'si' : 'no'),
+                    csvCell(logs)
+                ].join(';'));
+            });
+            return lines.join('\r\n') + '\r\n';
+        }
+
+        function csvParseNumber(v) {
+            const n = parseFloat(String(v === undefined ? '' : v).trim().replace(',', '.'));
+            return Number.isFinite(n) ? n : null;
+        }
+
+        function csvSplitList(v) {
+            const str = String(v || '').trim();
+            if (!str) return [];
+            return (str.includes('|') ? str.split('|') : str.split(',')).map(x => x.trim()).filter(Boolean);
+        }
+
+        function csvParsePlayLogs(v) {
+            return String(v || '').split(';').map(x => x.trim()).filter(Boolean).map(entry => {
+                const [date, count, rating] = entry.split(':');
+                const playerCount = parseInt(count);
+                const r = csvParseNumber(rating);
+                if (!Number.isFinite(playerCount) || r === null) return null;
+                return { date: (date || '').trim(), playerCount, rating: r };
+            }).filter(Boolean);
+        }
+
+        function csvRowsToGames(rows) {
+            const result = { games: [], invalid: [], error: null };
+            if (!rows.length) { result.error = 'Il file è vuoto.'; return result; }
+
+            const header = rows[0].map(normHeader);
+            const idx = {};
+            Object.keys(CSV_ALIASES).forEach(field => {
+                const i = header.findIndex(h => CSV_ALIASES[field].includes(h));
+                if (i >= 0) idx[field] = i;
+            });
+            if (idx.titolo === undefined) {
+                result.error = 'Colonna "titolo" non trovata nella prima riga del file.';
+                return result;
+            }
+
+            const get = (row, field) => {
+                if (idx[field] === undefined) return '';
+                let v = String(row[idx[field]] === undefined ? '' : row[idx[field]]).trim();
+                if (/^'[=+\-@]/.test(v)) v = v.slice(1); // annulla la protezione formula dell'export
+                return v;
+            };
+
+            for (let r = 1; r < rows.length; r++) {
+                const row = rows[r];
+                const title = get(row, 'titolo');
+                if (!title) { result.invalid.push({ line: r + 1, reason: 'titolo mancante' }); continue; }
+
+                const own = get(row, 'proprieta').toLowerCase();
+                const ownership = /^(amico|amica|friend|a)$/.test(own) ? 'friend' : 'owned';
+
+                const minPlayers = Math.max(1, parseInt(get(row, 'giocatori_min')) || 1);
+                let maxPlayers = parseInt(get(row, 'giocatori_max')) || Math.max(minPlayers, 4);
+                if (maxPlayers < minPlayers) maxPlayers = minPlayers;
+
+                const cover = get(row, 'url_immagine');
+                const payload = {
+                    title,
+                    isFavorite: /^(si|s|yes|y|true|1|x)$/i.test(get(row, 'preferito').normalize('NFD').replace(/[̀-ͯ]/g, '')),
+                    ownership,
+                    ownerName: ownership === 'friend' ? get(row, 'nome_amico') : '',
+                    minPlayers,
+                    maxPlayers,
+                    bestWith: get(row, 'ideale'),
+                    playTimeMinutes: parseInt(get(row, 'durata_min')) || 60,
+                    weight: csvParseNumber(get(row, 'complessita')) || 2.5,
+                    bggRating: csvParseNumber(get(row, 'rating_bgg')) || 7.0,
+                    themes: csvSplitList(get(row, 'temi')),
+                    series: csvSplitList(get(row, 'serie')),
+                    coverUrl: /^https?:\/\//i.test(cover) ? cover : '',
+                    notes: get(row, 'note')
+                };
+
+                const logs = csvParsePlayLogs(get(row, 'partite'));
+                if (logs.length) payload.playLogs = logs;
+
+                result.games.push(payload);
+            }
+            return result;
+        }
+
+        function downloadTextFile(filename, content) {
+            const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
+        function exportGamesCsv() {
+            if (!games.length) return showToast("Non ci sono giochi da esportare.", "error");
+            const sorted = [...games].sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+            const date = new Date().toISOString().split('T')[0];
+            downloadTextFile(`giochi_${date}.csv`, gamesToCsv(sorted));
+            showToast(`Esportati ${games.length} giochi`, "success");
+        }
+
+        function downloadCsvTemplate() {
+            const example = [{
+                title: 'Esempio Gioco', ownership: 'owned', ownerName: '', minPlayers: 2, maxPlayers: 4, bestWith: '3',
+                playTimeMinutes: 45, weight: 2.1, bggRating: 7.4, themes: ['Fantasy', 'Carte'], series: [],
+                coverUrl: 'https://esempio.it/immagine.jpg', notes: 'Note personali', isFavorite: false,
+                playLogs: [{ date: '2026-11-20', playerCount: 3, rating: 8 }]
+            }];
+            downloadTextFile('modello_giochi.csv', gamesToCsv(example));
+        }
+
+        let csvPending = null;
+
+        function openCsvModal() {
+            document.getElementById('csvExportCount').innerText = games.length;
+            document.getElementById('csvFileInput').value = '';
+            document.getElementById('csvPreview').classList.add('hidden');
+            csvPending = null;
+            openModal('csvModal');
+        }
+
+        async function handleCsvFile(input) {
+            const file = input.files && input.files[0];
+            const preview = document.getElementById('csvPreview');
+            csvPending = null;
+            preview.classList.add('hidden');
+            if (!file) return;
+            if (file.size > 2 * 1024 * 1024) return showToast("File troppo grande (massimo 2 MB).", "error");
+
+            try {
+                const buf = await file.arrayBuffer();
+                let text = new TextDecoder('utf-8').decode(buf);
+                // File salvati da Excel in Windows-1252: ripiega sulla codifica corretta
+                if (text.includes('�')) text = new TextDecoder('windows-1252').decode(buf);
+
+                const parsed = csvRowsToGames(parseCSV(text));
+                if (parsed.error) return showToast(parsed.error, "error");
+                if (!parsed.games.length) return showToast("Nessun gioco valido trovato nel file.", "error");
+
+                const existing = new Map(games.map(g => [(g.title || '').trim().toLowerCase(), g]));
+                const seen = new Set();
+                let fresh = 0, dups = 0, inFile = 0;
+                parsed.games.forEach(g => {
+                    const key = g.title.trim().toLowerCase();
+                    if (seen.has(key)) { inFile++; return; }
+                    seen.add(key);
+                    if (existing.has(key)) dups++; else fresh++;
+                });
+
+                csvPending = parsed;
+
+                const box = document.getElementById('csvPreviewText');
+                box.innerHTML = '';
+                const addLine = (text, cls) => {
+                    const p = document.createElement('p');
+                    p.textContent = text;
+                    if (cls) p.className = cls;
+                    box.appendChild(p);
+                };
+                addLine(`File: ${file.name}`, 'text-slate-400');
+                addLine(`Nuovi giochi da aggiungere: ${fresh}`, 'font-semibold text-emerald-300');
+                addLine(`Già presenti (stesso titolo): ${dups}`);
+                if (inFile) addLine(`Titoli ripetuti nel file (ignorati): ${inFile}`, 'text-amber-300');
+                if (parsed.invalid.length) {
+                    addLine(`Righe scartate: ${parsed.invalid.length} (${parsed.invalid.slice(0, 5).map(x => `riga ${x.line}: ${x.reason}`).join('; ')}${parsed.invalid.length > 5 ? '…' : ''})`, 'text-amber-300');
+                }
+
+                document.getElementById('csvDupOptions').classList.toggle('hidden', dups === 0);
+                document.getElementById('csvImportBtn').innerText = 'Importa';
+                preview.classList.remove('hidden');
+            } catch (err) {
+                console.error("Errore lettura CSV:", err);
+                showToast("Impossibile leggere il file CSV.", "error");
+            }
+        }
+
+        async function runCsvImport() {
+            if (!csvPending) return;
+            if (!window.db || !window.firestoreMethods) return showToast("Firebase non ancora inizializzato.", "error");
+
+            const btn = document.getElementById('csvImportBtn');
+            const mode = (document.querySelector('input[name="csvDupMode"]:checked') || {}).value || 'skip';
+            const { collection, addDoc, doc, updateDoc } = window.firestoreMethods;
+            const existing = new Map(games.map(g => [(g.title || '').trim().toLowerCase(), g]));
+            const seen = new Set();
+            let added = 0, updated = 0, skipped = 0, failed = 0;
+            const total = csvPending.games.length;
+            btn.disabled = true;
+
+            for (let i = 0; i < total; i++) {
+                const payload = { ...csvPending.games[i] };
+                const key = payload.title.trim().toLowerCase();
+                btn.innerText = `Importazione ${i + 1}/${total}...`;
+
+                if (seen.has(key)) { skipped++; continue; }
+                seen.add(key);
+
+                try {
+                    const ex = existing.get(key);
+                    if (ex) {
+                        if (mode === 'update') {
+                            await updateDoc(doc(window.db, "games", ex.id), payload);
+                            updated++;
+                        } else skipped++;
+                    } else {
+                        if (!payload.playLogs) payload.playLogs = [];
+                        await addDoc(collection(window.db, "games"), payload);
+                        added++;
+                    }
+                } catch (err) {
+                    failed++;
+                    console.error("Errore importazione riga", i + 2, err);
+                    if (failed === 1) showDbError('Errore durante l\'importazione CSV.', err);
+                }
+            }
+
+            btn.disabled = false;
+            csvPending = null;
+            document.getElementById('csvFileInput').value = '';
+            document.getElementById('csvPreview').classList.add('hidden');
+            closeModal('csvModal');
+
+            const parts = [`${added} aggiunti`];
+            if (updated) parts.push(`${updated} aggiornati`);
+            if (skipped) parts.push(`${skipped} saltati`);
+            if (failed) parts.push(`${failed} con errore`);
+            showToast(`Importazione completata: ${parts.join(', ')}`, failed ? "error" : "success");
+        }
+        // ==== CSV END ====
 
         function syncMobileFilters() {
             document.getElementById('filterSearch').value = document.getElementById('mobileFilterSearch').value;
